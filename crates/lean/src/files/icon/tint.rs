@@ -1,0 +1,9 @@
+pub(super) const SAND: u32 = 0xd6aa72;
+pub(super) const WHEAT: u32 = 0xd9c48e;
+pub(super) const INDIGO: u32 = 0xa3a8e8;
+pub(super) const GREEN: u32 = 0x8fc79a;
+pub(super) const CORAL: u32 = 0xe08a7a;
+pub(super) const TEAL: u32 = 0x7fb8b0;
+pub(super) const MAUVE: u32 = 0xb89cc4;
+pub(super) const NEUTRAL: u32 = 0x8a8a90;
+pub(super) const DIM: u32 = 0x6a6a70;
