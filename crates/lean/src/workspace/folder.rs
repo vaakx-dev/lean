@@ -29,6 +29,10 @@ impl ProjectViews {
                 window,
                 |workspace, _, event: &ExplorerEvent, window, cx| match event {
                     ExplorerEvent::OpenFile(path) => workspace.open_file(path.clone(), window, cx),
+                    ExplorerEvent::PathRenamed { from, to } => {
+                        workspace.rename_open_files(from, to, cx)
+                    }
+                    ExplorerEvent::PathDeleted(path) => workspace.close_deleted_files(path, cx),
                 },
             ),
             cx.subscribe_in(

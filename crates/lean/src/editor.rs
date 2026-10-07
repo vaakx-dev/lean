@@ -2,11 +2,12 @@ mod closing;
 mod minimap;
 mod open_file;
 mod opening;
+mod path_changes;
 mod saving;
 mod tabs;
 mod watermark;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gpui_kit::component::v_flex;
 use gpui_kit::*;
@@ -16,6 +17,7 @@ use watermark::render_watermark;
 
 pub(crate) enum EditorAreaEvent {
     ActiveEditorChanged,
+    FileRecreated(PathBuf),
 }
 
 pub(crate) struct EditorArea {

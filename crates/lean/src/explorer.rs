@@ -1,3 +1,5 @@
+mod context_menu;
+mod file_operations;
 mod keyboard;
 mod rows;
 mod tree;
@@ -12,11 +14,14 @@ use gpui_kit::{
 };
 
 use crate::project::{DirectoryEntry, Project, ProjectEvent};
+use file_operations::InlineEdit;
 
 pub(crate) use keyboard::bind_keys;
 
 pub(crate) enum ExplorerEvent {
     OpenFile(PathBuf),
+    PathRenamed { from: PathBuf, to: PathBuf },
+    PathDeleted(PathBuf),
 }
 
 struct VisibleEntry {
@@ -24,6 +29,7 @@ struct VisibleEntry {
     name: SharedString,
     depth: usize,
     is_dir: bool,
+    is_draft: bool,
 }
 
 pub(crate) struct Explorer {
@@ -36,6 +42,7 @@ pub(crate) struct Explorer {
     children: HashMap<PathBuf, Vec<DirectoryEntry>>,
     visible: Vec<VisibleEntry>,
     selected: Option<PathBuf>,
+    editing: Option<InlineEdit>,
     _project_subscription: Subscription,
 }
 
@@ -58,6 +65,7 @@ impl Explorer {
             children: HashMap::new(),
             visible: Vec::new(),
             selected: None,
+            editing: None,
             _project_subscription: project_subscription,
         };
         explorer.load_directory(root, cx);

@@ -1,12 +1,24 @@
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::*;
 
-use super::keyboard::KEY_CONTEXT;
+use super::context_menu::build_context_menu;
+use super::file_operations::bind_file_operations;
+use super::keyboard::{KEY_CONTEXT, NOT_EDITING_CONTEXT};
 use super::{Explorer, chevron_icon};
 use crate::app::actions::{CollapseAllFolders, RefreshExplorer};
 
 impl Explorer {
+    fn key_context(&self) -> KeyContext {
+        let mut context = KeyContext::new_with_defaults();
+        context.add(KEY_CONTEXT);
+        if self.editing.is_none() {
+            context.add(NOT_EDITING_CONTEXT);
+        }
+        context
+    }
+
     fn is_scrolled(&self) -> bool {
         self.scroll_handle.0.borrow().base_handle.offset().y < px(0.)
     }
@@ -76,9 +88,10 @@ fn header_button(
 
 impl Render for Explorer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        v_flex()
+        let explorer = cx.weak_entity();
+        let element = v_flex()
             .id("explorer")
-            .key_context(KEY_CONTEXT)
+            .key_context(self.key_context())
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_previous))
@@ -87,6 +100,12 @@ impl Render for Explorer {
             .on_action(cx.listener(Self::open_selected))
             .on_action(cx.listener(Self::refresh))
             .on_action(cx.listener(Self::collapse_all))
+            .capture_any_mouse_down(cx.listener(Self::prepare_context_menu))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|explorer, _, _, cx| explorer.clear_selection(cx)),
+            );
+        bind_file_operations(element, cx)
             .size_full()
             .child(self.render_header(cx))
             .child(
@@ -102,5 +121,9 @@ impl Render for Explorer {
                     .pb_2(),
                 ),
             )
+            .context_menu(move |menu, _, cx| match explorer.upgrade() {
+                Some(explorer) => build_context_menu(menu, explorer.read(cx).menu_target()),
+                None => menu,
+            })
     }
 }

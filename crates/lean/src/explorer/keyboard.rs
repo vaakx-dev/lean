@@ -1,6 +1,7 @@
 use gpui_kit::{App, Context, KeyBinding, ScrollStrategy, Window, actions};
 
-use super::{Explorer, ExplorerEvent};
+use super::file_operations::{DeleteSelected, RenameSelected};
+use super::{Explorer, ExplorerEvent, VisibleEntry};
 
 actions!(
     explorer,
@@ -14,15 +15,21 @@ actions!(
 );
 
 pub(super) const KEY_CONTEXT: &str = "Explorer";
+pub(super) const NOT_EDITING_CONTEXT: &str = "not_editing";
+const NAVIGATION_CONTEXT: &str = "Explorer && not_editing";
 
 pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
-        KeyBinding::new("down", SelectNext, Some(KEY_CONTEXT)),
-        KeyBinding::new("up", SelectPrevious, Some(KEY_CONTEXT)),
-        KeyBinding::new("right", ExpandSelected, Some(KEY_CONTEXT)),
-        KeyBinding::new("left", CollapseSelected, Some(KEY_CONTEXT)),
-        KeyBinding::new("enter", OpenSelected, Some(KEY_CONTEXT)),
-        KeyBinding::new("space", OpenSelected, Some(KEY_CONTEXT)),
+        KeyBinding::new("down", SelectNext, Some(NAVIGATION_CONTEXT)),
+        KeyBinding::new("up", SelectPrevious, Some(NAVIGATION_CONTEXT)),
+        KeyBinding::new("right", ExpandSelected, Some(NAVIGATION_CONTEXT)),
+        KeyBinding::new("left", CollapseSelected, Some(NAVIGATION_CONTEXT)),
+        KeyBinding::new("space", OpenSelected, Some(NAVIGATION_CONTEXT)),
+        KeyBinding::new("enter", OpenSelected, Some(NAVIGATION_CONTEXT)),
+        KeyBinding::new("f2", RenameSelected, Some(NAVIGATION_CONTEXT)),
+        KeyBinding::new("delete", DeleteSelected, Some(NAVIGATION_CONTEXT)),
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("cmd-backspace", DeleteSelected, Some(NAVIGATION_CONTEXT)),
     ]);
 }
 
@@ -115,14 +122,19 @@ impl Explorer {
         }
     }
 
-    fn selected_index(&self) -> Option<usize> {
+    pub(super) fn selected_index(&self) -> Option<usize> {
         let selected = self.selected.as_ref()?;
         self.visible
             .iter()
-            .position(|entry| &entry.path == selected)
+            .position(|entry| !entry.is_draft && &entry.path == selected)
     }
 
-    fn select_index(&mut self, index: usize, cx: &mut Context<Self>) {
+    pub(super) fn selected_entry(&self) -> Option<&VisibleEntry> {
+        self.selected_index()
+            .and_then(|index| self.visible.get(index))
+    }
+
+    pub(super) fn select_index(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(entry) = self.visible.get(index) {
             self.selected = Some(entry.path.clone());
             self.scroll_handle

@@ -1,3 +1,6 @@
+use std::io;
+use std::path::Path;
+
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::*;
 
@@ -20,7 +23,7 @@ impl EditorArea {
             return false;
         };
         let content = file.editor.read(cx).value();
-        if let Err(error) = std::fs::write(&file.path, content.as_bytes()) {
+        if let Err(error) = write_file(&file.path, content.as_bytes(), file.deleted) {
             log::error!("failed to save {}: {error}", file.path.display());
             window.push_notification(
                 format!("Failed to save {}: {error}", file.path.display()),
@@ -29,8 +32,19 @@ impl EditorArea {
             return false;
         }
         file.dirty = false;
+        if file.deleted {
+            file.deleted = false;
+            cx.emit(EditorAreaEvent::FileRecreated(file.path.clone()));
+        }
         cx.emit(EditorAreaEvent::ActiveEditorChanged);
         cx.notify();
         true
     }
+}
+
+fn write_file(path: &Path, content: &[u8], recreate_folder: bool) -> io::Result<()> {
+    if recreate_folder && let Some(folder) = path.parent() {
+        std::fs::create_dir_all(folder)?;
+    }
+    std::fs::write(path, content)
 }

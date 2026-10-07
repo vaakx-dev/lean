@@ -62,7 +62,11 @@ impl EditorArea {
                 cx.listener(move |area, _, window, cx| area.close(index, window, cx)),
             )
             .child(file_icon(&file.name))
-            .child(file.name.clone())
+            .child(
+                div()
+                    .when(file.deleted, |name| name.line_through())
+                    .child(file.name.clone()),
+            )
             .child(close_button(index, file.dirty, is_active, cx))
     }
 }

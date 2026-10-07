@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, TabSize};
@@ -20,6 +20,7 @@ pub(crate) struct OpenFile {
     pub(super) editor: Entity<EditorState>,
     pub(super) minimap: Entity<Minimap>,
     pub(super) dirty: bool,
+    pub(super) deleted: bool,
     cursor: Position,
     language: Language,
     _editor_subscriptions: [Subscription; 2],
@@ -32,11 +33,7 @@ impl OpenFile {
         window: &mut Window,
         cx: &mut Context<EditorArea>,
     ) -> Self {
-        let language = if content.len() > HIGHLIGHT_SIZE_LIMIT {
-            Language::PLAIN
-        } else {
-            Language::for_path(&path)
-        };
+        let language = language_for(&path, content.len());
         let editor = cx.new(|cx| {
             EditorState::new(window, cx)
                 .language(language.id())
@@ -62,10 +59,23 @@ impl OpenFile {
             editor,
             minimap,
             dirty: false,
+            deleted: false,
             cursor,
             language,
             _editor_subscriptions: editor_subscriptions,
         }
+    }
+
+    pub(super) fn set_path(&mut self, path: PathBuf, cx: &mut App) {
+        let language = language_for(&path, self.editor.read(cx).text().len());
+        if language.id() != self.language.id() {
+            self.editor
+                .update(cx, |editor, cx| editor.set_highlighter(language.id(), cx));
+            self.language = language;
+        }
+        self.name = file_name(&path);
+        self.path = path;
+        self.deleted = false;
     }
 
     pub(crate) fn cursor_position(&self) -> Position {
@@ -84,6 +94,14 @@ impl OpenFile {
             .h(relative(1.))
             .font_family(theme.mono_font_family.clone())
             .text_size(theme.mono_font_size)
+    }
+}
+
+fn language_for(path: &Path, content_length: usize) -> Language {
+    if content_length > HIGHLIGHT_SIZE_LIMIT {
+        Language::PLAIN
+    } else {
+        Language::for_path(path)
     }
 }
 

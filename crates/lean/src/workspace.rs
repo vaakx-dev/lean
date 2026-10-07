@@ -9,7 +9,7 @@ mod status_bar;
 mod terminal_panel;
 mod title_bar;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui_kit::component::menu::AppMenuBar;
 use gpui_kit::*;
@@ -67,13 +67,13 @@ impl Workspace {
 
     fn create_editor_area(cx: &mut Context<Self>) -> (Entity<EditorArea>, Subscription) {
         let editor_area = cx.new(EditorArea::new);
-        let subscription =
-            cx.subscribe(
-                &editor_area,
-                |_, _, event: &EditorAreaEvent, cx| match event {
-                    EditorAreaEvent::ActiveEditorChanged => cx.notify(),
-                },
-            );
+        let subscription = cx.subscribe(
+            &editor_area,
+            |workspace, _, event: &EditorAreaEvent, cx| match event {
+                EditorAreaEvent::ActiveEditorChanged => cx.notify(),
+                EditorAreaEvent::FileRecreated(path) => workspace.show_recreated_file(path, cx),
+            },
+        );
         (editor_area, subscription)
     }
 
@@ -85,6 +85,21 @@ impl Workspace {
     fn open_file(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.editor_area
             .update(cx, |area, cx| area.open(path, window, cx));
+    }
+
+    fn rename_open_files(&mut self, from: &Path, to: &Path, cx: &mut Context<Self>) {
+        self.editor_area
+            .update(cx, |area, cx| area.rename_files(from, to, cx));
+    }
+
+    fn close_deleted_files(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.editor_area
+            .update(cx, |area, cx| area.close_deleted_files(path, cx));
+    }
+
+    fn show_recreated_file(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.explorer
+            .update(cx, |explorer, cx| explorer.show_recreated_file(path, cx));
     }
 }
 
