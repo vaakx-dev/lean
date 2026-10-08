@@ -2,6 +2,7 @@
 resolver = "2"
 members = ["crates/lean"]
 default-members = ["crates/lean"]
+exclude = ["vendor"]
 
 [workspace.package]
 edition = "2024"
@@ -10,7 +11,33 @@ license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1"
-gpui-kit = { version = "=0.7.1", features = ["tree-sitter-languages"] }
+gpui-kit = { version = "=0.7.1", features = [
+    "tree-sitter-astro",
+    "tree-sitter-bash",
+    "tree-sitter-c",
+    "tree-sitter-cmake",
+    "tree-sitter-cpp",
+    "tree-sitter-css",
+    "tree-sitter-diff",
+    "tree-sitter-go",
+    "tree-sitter-graphql",
+    "tree-sitter-html",
+    "tree-sitter-java",
+    "tree-sitter-javascript",
+    "tree-sitter-jsdoc",
+    "tree-sitter-lua",
+    "tree-sitter-make",
+    "tree-sitter-markdown",
+    "tree-sitter-proto",
+    "tree-sitter-python",
+    "tree-sitter-rust",
+    "tree-sitter-svelte",
+    "tree-sitter-toml",
+    "tree-sitter-tsx",
+    "tree-sitter-typescript",
+    "tree-sitter-yaml",
+    "tree-sitter-zig",
+] }
 git2 = { version = "0.20", default-features = false }
 log = "0.4"
 env_logger = "0.11"
@@ -24,3 +51,19 @@ opt-level = 2
 [profile.release]
 lto = "thin"
 codegen-units = 16
+strip = true
+
+[profile.perf]
+inherits = "release"
+lto = false
+incremental = true
+
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+[patch.crates-io]
+gpui-base = { path = "vendor/gpui-base" }
+gpui-component = { path = "vendor/gpui-component" }
+gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
