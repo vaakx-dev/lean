@@ -1,33 +1,51 @@
-use std::path::PathBuf;
+use std::fmt::Display;
+use std::path::{Path, PathBuf};
 
-use anyhow::Context as _;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::*;
 
+use super::disk_io::{DiskFile, read_file};
+use super::go_to::GoTo;
 use super::open_file::OpenFile;
 use super::{EditorArea, EditorAreaEvent};
+use crate::files::file_name;
+use crate::plugins::{FileViewer, viewer_for};
 
 impl EditorArea {
     pub(crate) fn open(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_with(path, None, window, cx);
+    }
+
+    pub(super) fn open_with(
+        &mut self,
+        path: PathBuf,
+        target: Option<GoTo>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(index) = self.index_of(&path) {
-            self.activate(index, window, cx);
+            self.show(index, target, window, cx);
             return;
         }
+        let Some(viewer) = viewer_for(&path, cx) else {
+            report_open_error(&path, &"no viewer can open it", window, cx);
+            return;
+        };
         let read = cx.background_spawn({
             let path = path.clone();
             async move {
-                std::fs::read_to_string(&path)
-                    .with_context(|| format!("{} is not a UTF-8 text file", path.display()))
+                read_file(&path).inspect(|disk| {
+                    if let Some(prepare) = viewer.prepare {
+                        prepare(&path, &disk.bytes);
+                    }
+                })
             }
         });
         cx.spawn_in(window, async move |area, cx| {
             let result = read.await;
             let update = area.update_in(cx, |area, window, cx| match result {
-                Ok(content) => area.insert_file(path, content, window, cx),
-                Err(error) => {
-                    log::warn!("failed to open {}: {error:#}", path.display());
-                    window.push_notification(format!("Can't open file: {error:#}"), cx);
-                }
+                Ok(disk) => area.insert_file(path, viewer, disk, target, window, cx),
+                Err(error) => report_open_error(&path, &error, window, cx),
             });
             if let Err(error) = update {
                 log::debug!("editor area dropped while opening a file: {error:#}");
@@ -57,7 +75,7 @@ impl EditorArea {
         let Some(file) = self.files.get(index) else {
             return;
         };
-        let focus_handle = file.editor.focus_handle(cx);
+        let focus_handle = file.view.focus_handle(cx);
         self.active = Some(index);
         window.focus(&focus_handle, cx);
         cx.emit(EditorAreaEvent::ActiveEditorChanged);
@@ -67,17 +85,50 @@ impl EditorArea {
     fn insert_file(
         &mut self,
         path: PathBuf,
-        content: String,
+        viewer: FileViewer,
+        disk: DiskFile,
+        target: Option<GoTo>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if let Some(index) = self.index_of(&path) {
-            self.activate(index, window, cx);
+            self.show(index, target, window, cx);
             return;
         }
-        let file = OpenFile::new(path, content, window, cx);
+        let toolchains = self.toolchains.clone();
+        let file = match OpenFile::open(path.clone(), viewer, disk, toolchains, window, cx) {
+            Ok(file) => file,
+            Err(error) => {
+                report_open_error(&path, &format!("{error:#}"), window, cx);
+                return;
+            }
+        };
+        let index = self.insert(file, cx);
+        self.show(index, target, window, cx);
+    }
+
+    pub(super) fn insert(&mut self, file: OpenFile, cx: &mut Context<Self>) -> usize {
         let index = self.active.map_or(self.files.len(), |active| active + 1);
         self.files.insert(index, file);
-        self.activate(index, window, cx);
+        cx.emit(EditorAreaEvent::OpenFilesChanged);
+        index
     }
+
+    fn show(
+        &mut self,
+        index: usize,
+        target: Option<GoTo>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.activate(index, window, cx);
+        if let Some(target) = target {
+            self.go_to(index, target, window, cx);
+        }
+    }
+}
+
+fn report_open_error(path: &Path, error: &dyn Display, window: &mut Window, cx: &mut App) {
+    log::warn!("failed to open {}: {error}", path.display());
+    window.push_notification(format!("Can't open {}: {error}", file_name(path)), cx);
 }

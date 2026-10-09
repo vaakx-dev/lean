@@ -1,134 +1,132 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::component::input::{Editor, EditorState, InputEvent, Position, TabSize};
+use anyhow::Result;
 use gpui_kit::*;
 
-use super::minimap::Minimap;
+use super::disk_io::DiskFile;
+use super::disk_state::DiskState;
 use super::{EditorArea, EditorAreaEvent};
-use crate::files::{Language, file_name};
+use crate::files::file_name;
+use crate::plugins::{AnyFileView, FileViewEvent, FileViewer, OpenRequest};
+use crate::toolchain::Toolchains;
 
-const HIGHLIGHT_SIZE_LIMIT: usize = 4 * 1024 * 1024;
-const TAB_SIZE: TabSize = TabSize {
-    tab_size: 4,
-    hard_tabs: false,
-};
+static NEXT_FILE_ID: AtomicU64 = AtomicU64::new(0);
 
-pub(crate) struct OpenFile {
+pub(super) enum TabKind {
+    File,
+    View { icon: SharedString },
+}
+
+pub(super) struct OpenFile {
+    pub(super) id: u64,
     pub(super) path: PathBuf,
     pub(super) name: SharedString,
-    pub(super) editor: Entity<EditorState>,
-    pub(super) minimap: Entity<Minimap>,
+    pub(super) kind: TabKind,
     pub(super) dirty: bool,
     pub(super) deleted: bool,
-    cursor: Position,
-    language: Language,
-    _editor_subscriptions: [Subscription; 2],
+    pub(super) version: u64,
+    pub(super) disk: DiskState,
+    pub(super) view: AnyFileView,
+    _subscription: Subscription,
 }
 
 impl OpenFile {
-    pub(super) fn new(
+    pub(super) fn open(
         path: PathBuf,
-        content: String,
+        viewer: FileViewer,
+        disk: DiskFile,
+        toolchains: Entity<Toolchains>,
         window: &mut Window,
         cx: &mut Context<EditorArea>,
+    ) -> Result<Self> {
+        let state = DiskState::loaded(&disk);
+        let request = OpenRequest {
+            path: path.clone(),
+            bytes: disk.bytes,
+            toolchains,
+        };
+        let view = (viewer.open)(request, window, cx)?;
+        let name = file_name(&path);
+        Ok(Self::new(path, name, TabKind::File, state, view, cx))
+    }
+
+    pub(super) fn detached(
+        key: PathBuf,
+        title: SharedString,
+        icon: SharedString,
+        view: AnyFileView,
+        cx: &mut Context<EditorArea>,
     ) -> Self {
-        let language = language_for(&path, content.len());
-        let editor = cx.new(|cx| {
-            EditorState::new(window, cx)
-                .language(language.id())
-                .line_number(true)
-                .indent_guides(true)
-                .folding(true)
-                .searchable(true)
-                .soft_wrap(false)
-                .tab_size(TAB_SIZE)
-                .default_value(content)
-        });
-        let minimap = cx.new(|cx| Minimap::new(editor.clone(), cx));
-        let cursor = editor.read(cx).cursor_position();
-        let editor_subscriptions = [
-            cx.subscribe(&editor, |area, editor, event: &InputEvent, cx| {
-                area.handle_editor_event(editor, event, cx)
+        let kind = TabKind::View { icon };
+        Self::new(key, title, kind, DiskState::detached(), view, cx)
+    }
+
+    fn new(
+        path: PathBuf,
+        name: SharedString,
+        kind: TabKind,
+        disk: DiskState,
+        view: AnyFileView,
+        cx: &mut Context<EditorArea>,
+    ) -> Self {
+        let id = NEXT_FILE_ID.fetch_add(1, Ordering::Relaxed);
+        let area = cx.weak_entity();
+        let subscription = view.subscribe(
+            cx,
+            Box::new(move |event: &FileViewEvent, cx: &mut App| {
+                let update = area.update(cx, |area, cx| area.handle_view_event(id, event, cx));
+                if let Err(error) = update {
+                    log::debug!("editor area dropped while a file view changed: {error:#}");
+                }
             }),
-            cx.observe(&editor, |area, editor, cx| area.sync_cursor(editor, cx)),
-        ];
+        );
         Self {
-            name: file_name(&path),
+            id,
             path,
-            editor,
-            minimap,
+            name,
+            kind,
             dirty: false,
             deleted: false,
-            cursor,
-            language,
-            _editor_subscriptions: editor_subscriptions,
+            version: 0,
+            disk,
+            view,
+            _subscription: subscription,
         }
     }
 
+    pub(super) fn is_file(&self) -> bool {
+        matches!(self.kind, TabKind::File)
+    }
+
     pub(super) fn set_path(&mut self, path: PathBuf, cx: &mut App) {
-        let language = language_for(&path, self.editor.read(cx).text().len());
-        if language.id() != self.language.id() {
-            self.editor
-                .update(cx, |editor, cx| editor.set_highlighter(language.id(), cx));
-            self.language = language;
-        }
+        self.view.set_path(&path, cx);
         self.name = file_name(&path);
         self.path = path;
         self.deleted = false;
     }
-
-    pub(crate) fn cursor_position(&self) -> Position {
-        self.cursor
-    }
-
-    pub(crate) fn language_name(&self) -> &'static str {
-        self.language.display_name()
-    }
-
-    pub(super) fn render_editor(&self, cx: &App) -> Editor {
-        let theme = cx.theme();
-        Editor::new(&self.editor)
-            .bordered(false)
-            .p_0()
-            .h(relative(1.))
-            .font_family(theme.mono_font_family.clone())
-            .text_size(theme.mono_font_size)
-    }
-}
-
-fn language_for(path: &Path, content_length: usize) -> Language {
-    if content_length > HIGHLIGHT_SIZE_LIMIT {
-        Language::PLAIN
-    } else {
-        Language::for_path(path)
-    }
 }
 
 impl EditorArea {
-    fn handle_editor_event(
-        &mut self,
-        editor: Entity<EditorState>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
-        if matches!(event, InputEvent::Change)
-            && let Some(file) = self.files.iter_mut().find(|file| file.editor == editor)
-            && !file.dirty
-        {
-            file.dirty = true;
-            cx.notify();
-        }
-        cx.emit(EditorAreaEvent::ActiveEditorChanged);
-    }
-
-    fn sync_cursor(&mut self, editor: Entity<EditorState>, cx: &mut Context<Self>) {
-        let cursor = editor.read(cx).cursor_position();
-        if let Some(file) = self.files.iter_mut().find(|file| file.editor == editor)
-            && file.cursor != cursor
-        {
-            file.cursor = cursor;
-            cx.emit(EditorAreaEvent::ActiveEditorChanged);
+    fn handle_view_event(&mut self, id: u64, event: &FileViewEvent, cx: &mut Context<Self>) {
+        let Some(index) = self.index_of_id(id) else {
+            return;
+        };
+        match event {
+            FileViewEvent::Edited => {
+                let file = &mut self.files[index];
+                file.version += 1;
+                if !file.is_file() {
+                    return;
+                }
+                let dirty = file.view.differs_from_saved(cx);
+                if file.dirty != dirty {
+                    file.dirty = dirty;
+                    cx.notify();
+                }
+                cx.emit(EditorAreaEvent::FileEdited(file.path.clone()));
+            }
+            FileViewEvent::StatusChanged => cx.emit(EditorAreaEvent::ActiveEditorChanged),
         }
     }
 }

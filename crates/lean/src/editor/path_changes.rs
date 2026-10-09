@@ -6,7 +6,8 @@ use super::{EditorArea, EditorAreaEvent};
 
 impl EditorArea {
     pub(crate) fn rename_files(&mut self, from: &Path, to: &Path, cx: &mut Context<Self>) {
-        for file in &mut self.files {
+        let mut renamed = false;
+        for file in self.files.iter_mut().filter(|file| file.is_file()) {
             let Ok(suffix) = file.path.strip_prefix(from) else {
                 continue;
             };
@@ -16,37 +17,39 @@ impl EditorArea {
                 to.join(suffix)
             };
             file.set_path(path, cx);
+            renamed = true;
         }
-        cx.emit(EditorAreaEvent::ActiveEditorChanged);
-        cx.notify();
+        if renamed {
+            cx.emit(EditorAreaEvent::OpenFilesChanged);
+            cx.emit(EditorAreaEvent::ActiveEditorChanged);
+            cx.notify();
+        }
     }
 
-    pub(crate) fn close_deleted_files(&mut self, path: &Path, cx: &mut Context<Self>) {
+    pub(crate) fn close_deleted_files(
+        &mut self,
+        path: &Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut changed = false;
         for index in (0..self.files.len()).rev() {
             let Some(file) = self.files.get_mut(index) else {
                 continue;
             };
-            if !file.path.starts_with(path) {
+            if !file.is_file() || !file.path.starts_with(path) {
                 continue;
             }
+            changed = true;
             if file.dirty {
                 file.deleted = true;
             } else {
-                self.discard(index);
+                self.remove(index, window, cx);
             }
         }
-        cx.emit(EditorAreaEvent::ActiveEditorChanged);
-        cx.notify();
-    }
-
-    fn discard(&mut self, index: usize) {
-        self.files.remove(index);
-        self.active = match self.active {
-            _ if self.files.is_empty() => None,
-            Some(active) if active >= index => {
-                Some(active.saturating_sub(1).min(self.files.len() - 1))
-            }
-            active => active,
-        };
+        if changed {
+            cx.emit(EditorAreaEvent::ActiveEditorChanged);
+            cx.notify();
+        }
     }
 }

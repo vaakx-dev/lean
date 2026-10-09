@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use gpui_kit::*;
 
 use super::{EditorArea, EditorAreaEvent};
@@ -22,7 +20,7 @@ impl EditorArea {
             self.remove(index, window, cx);
             return;
         }
-        let path = file.path.clone();
+        let id = file.id;
         let answer = window.prompt(
             PromptLevel::Warning,
             &format!("Do you want to save the changes you made to {}?", file.name),
@@ -43,7 +41,7 @@ impl EditorArea {
                 }
             };
             let update = area.update_in(cx, |area, window, cx| {
-                area.finish_close(&path, answer, window, cx)
+                area.finish_close(id, answer, window, cx)
             });
             if let Err(error) = update {
                 log::debug!("editor area dropped while closing a file: {error:#}");
@@ -54,30 +52,48 @@ impl EditorArea {
 
     fn finish_close(
         &mut self,
-        path: &Path,
+        id: u64,
         answer: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self.index_of(path) else {
+        let Some(index) = self.index_of_id(id) else {
             return;
         };
         match answer {
-            SAVE_ANSWER => {
-                if self.save(index, window, cx) {
-                    self.remove(index, window, cx);
-                }
-            }
+            SAVE_ANSWER => self.save_and_remove(index, window, cx),
             DISCARD_ANSWER => self.remove(index, window, cx),
             _ => {}
         }
     }
 
-    fn remove(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    fn save_and_remove(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.files.get(index).map(|file| file.id) else {
+            return;
+        };
+        let save = self.save(index, window, cx);
+        cx.spawn_in(window, async move |area, cx| {
+            if !save.await {
+                return;
+            }
+            let update = area.update_in(cx, |area, window, cx| {
+                if let Some(index) = area.index_of_id(id) {
+                    area.remove(index, window, cx);
+                }
+            });
+            if let Err(error) = update {
+                log::debug!("editor area dropped while closing a saved file: {error:#}");
+            }
+        })
+        .detach();
+    }
+
+    pub(super) fn remove(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if index >= self.files.len() {
             return;
         }
         self.files.remove(index);
+        cx.emit(EditorAreaEvent::OpenFilesChanged);
         match self.active {
             _ if self.files.is_empty() => {
                 self.active = None;

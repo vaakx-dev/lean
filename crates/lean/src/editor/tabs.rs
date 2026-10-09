@@ -3,21 +3,30 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::EditorArea;
-use super::open_file::OpenFile;
+use super::open_file::{OpenFile, TabKind};
 use crate::files::file_icon;
 
 const TAB_GROUP: &str = "tab";
 
 impl EditorArea {
-    pub(super) fn render_tabs(&self, cx: &Context<Self>) -> Stateful<Div> {
+    pub(super) fn render_tab_bar(&self, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
         h_flex()
-            .id("editor-tabs")
             .h(px(36.))
             .flex_shrink_0()
-            .overflow_x_scroll()
             .border_b_1()
             .border_color(theme.border)
+            .child(self.render_tabs(cx))
+            .children(self.render_file_actions(cx))
+    }
+
+    fn render_tabs(&self, cx: &Context<Self>) -> Stateful<Div> {
+        h_flex()
+            .id("editor-tabs")
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .overflow_x_scroll()
             .children(
                 self.files
                     .iter()
@@ -61,13 +70,28 @@ impl EditorArea {
                 MouseButton::Middle,
                 cx.listener(move |area, _, window, cx| area.close(index, window, cx)),
             )
-            .child(file_icon(&file.name))
+            .child(tab_icon(file))
             .child(
                 div()
                     .when(file.deleted, |name| name.line_through())
                     .child(file.name.clone()),
             )
+            .when(file.disk.conflict, |tab| {
+                tab.child(
+                    Icon::empty()
+                        .path("icons/triangle-alert.svg")
+                        .size(px(14.))
+                        .text_color(theme.warning),
+                )
+            })
             .child(close_button(index, file.dirty, is_active, cx))
+    }
+}
+
+fn tab_icon(file: &OpenFile) -> Icon {
+    match &file.kind {
+        TabKind::File => file_icon(&file.name),
+        TabKind::View { icon } => Icon::empty().path(icon.clone()).size_4(),
     }
 }
 
@@ -80,6 +104,7 @@ fn close_button(
     let theme = cx.theme();
     div()
         .id("close")
+        .relative()
         .size(px(20.))
         .flex()
         .items_center()
@@ -90,22 +115,25 @@ fn close_button(
             cx.stop_propagation();
             area.close(index, window, cx)
         }))
+        .child(
+            div()
+                .flex()
+                .when(is_dirty || !is_active, |icon| icon.invisible())
+                .group_hover(TAB_GROUP, |style| style.visible())
+                .child(Icon::empty().path("icons/x.svg").size(px(14.))),
+        )
         .when(is_dirty, |close| {
             close.child(
                 div()
-                    .size(px(8.))
-                    .rounded_full()
-                    .bg(theme.foreground)
-                    .group_hover(TAB_GROUP, |style| style.invisible()),
-            )
-        })
-        .when(!is_dirty, |close| {
-            close.child(
-                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full()
                     .flex()
-                    .when(!is_active, |icon| icon.invisible())
-                    .group_hover(TAB_GROUP, |style| style.visible())
-                    .child(Icon::empty().path("icons/x.svg").size(px(14.))),
+                    .items_center()
+                    .justify_center()
+                    .group_hover(TAB_GROUP, |style| style.invisible())
+                    .child(div().size(px(8.)).rounded_full().bg(theme.foreground)),
             )
         })
 }
