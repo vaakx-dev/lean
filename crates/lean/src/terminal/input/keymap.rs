@@ -4,8 +4,9 @@ actions!(terminal, [Paste]);
 
 pub(crate) const KEY_CONTEXT: &str = "Terminal";
 
-const SHELL_KEYSTROKES: [&str; 7] = [
+const SHELL_KEYSTROKES: [&str; 8] = [
     "ctrl-c",
+    "ctrl-r",
     "ctrl-w",
     "ctrl-b",
     "ctrl-s",

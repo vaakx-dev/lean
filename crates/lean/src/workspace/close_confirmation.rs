@@ -1,0 +1,164 @@
+use gpui_kit::*;
+
+use super::Workspace;
+
+#[derive(Clone, Copy)]
+pub(crate) enum CloseIntent {
+    Quit,
+    SwitchProject,
+}
+
+#[derive(Clone, Copy)]
+enum Choice {
+    SaveAll,
+    Proceed,
+    Cancel,
+}
+
+struct ClosePrompt {
+    message: String,
+    detail: String,
+    buttons: Vec<PromptButton>,
+    choices: Vec<Choice>,
+}
+
+impl Workspace {
+    pub(crate) fn confirm_close(
+        &mut self,
+        intent: CloseIntent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Task<bool> {
+        if self.confirming_close {
+            return Task::ready(false);
+        }
+        let Some(prompt) = self.close_prompt(intent, cx) else {
+            return Task::ready(true);
+        };
+        self.confirming_close = true;
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            &prompt.message,
+            Some(prompt.detail.as_str()),
+            prompt.buttons.as_slice(),
+            cx,
+        );
+        let choices = prompt.choices;
+        cx.spawn_in(window, async move |workspace, cx| {
+            let choice = match answer.await {
+                Ok(answer) => choices.get(answer).copied().unwrap_or(Choice::Cancel),
+                Err(error) => {
+                    log::debug!("the close prompt was dismissed: {error}");
+                    Choice::Cancel
+                }
+            };
+            let confirmed = match choice {
+                Choice::SaveAll => save_unsaved(&workspace, cx).await,
+                Choice::Proceed => true,
+                Choice::Cancel => false,
+            };
+            let update = workspace.update(cx, |workspace, _| workspace.confirming_close = false);
+            if let Err(error) = update {
+                log::debug!("workspace dropped while confirming a close: {error:#}");
+            }
+            confirmed
+        })
+    }
+
+    pub(super) fn needs_close_confirmation(&self, intent: CloseIntent, cx: &App) -> bool {
+        self.confirming_close || self.close_prompt(intent, cx).is_some()
+    }
+
+    fn close_prompt(&self, intent: CloseIntent, cx: &App) -> Option<ClosePrompt> {
+        let unsaved = self.context.editor_area.read(cx).unsaved_file_names();
+        let processes = match intent {
+            CloseIntent::Quit => None,
+            CloseIntent::SwitchProject => self.running_processes_notice(cx),
+        };
+        let prompt = match (unsaved.as_slice(), processes) {
+            ([], None) => return None,
+            ([], Some(notice)) => ClosePrompt {
+                message: "Do you want to switch projects?".into(),
+                detail: notice,
+                buttons: vec![
+                    PromptButton::ok("Switch Project"),
+                    PromptButton::cancel("Cancel"),
+                ],
+                choices: vec![Choice::Proceed, Choice::Cancel],
+            },
+            (names, notice) => ClosePrompt {
+                message: unsaved_message(names),
+                detail: unsaved_detail(notice),
+                buttons: vec![
+                    PromptButton::ok("Save All"),
+                    PromptButton::new("Don't Save"),
+                    PromptButton::cancel("Cancel"),
+                ],
+                choices: vec![Choice::SaveAll, Choice::Proceed, Choice::Cancel],
+            },
+        };
+        Some(prompt)
+    }
+
+    fn running_processes_notice(&self, cx: &App) -> Option<String> {
+        let terminals = self.running_terminal_count(cx);
+        let terminal_effect =
+            (terminals > 0).then(|| format!("close {}", counted(terminals, "terminal")));
+        let work_effects = self
+            .context
+            .editor_area
+            .read(cx)
+            .running_work(cx)
+            .into_iter()
+            .map(|(kind, count)| format!("stop {}", counted(count, kind)));
+        let effects: Vec<String> = terminal_effect.into_iter().chain(work_effects).collect();
+        if effects.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "Switching projects will {}.",
+            effects.join(" and ")
+        ))
+    }
+}
+
+async fn save_unsaved(workspace: &WeakEntity<Workspace>, cx: &mut AsyncWindowContext) -> bool {
+    let save = workspace.update_in(cx, |workspace, window, cx| {
+        workspace
+            .context
+            .editor_area
+            .update(cx, |area, cx| area.save_unsaved(window, cx))
+    });
+    match save {
+        Ok(save) => save.await,
+        Err(error) => {
+            log::debug!("workspace dropped while saving all files: {error:#}");
+            false
+        }
+    }
+}
+
+fn unsaved_message(names: &[SharedString]) -> String {
+    match names {
+        [name] => format!("Do you want to save the changes you made to {name}?"),
+        names => format!(
+            "Do you want to save the changes you made to {} files?",
+            names.len()
+        ),
+    }
+}
+
+fn unsaved_detail(notice: Option<String>) -> String {
+    let warning = "Your changes will be lost if you don't save them.";
+    match notice {
+        Some(notice) => format!("{warning} {notice}"),
+        None => warning.to_owned(),
+    }
+}
+
+fn counted(count: usize, noun: &str) -> String {
+    match count {
+        1 => format!("1 {noun}"),
+        count => format!("{count} {noun}s"),
+    }
+}
