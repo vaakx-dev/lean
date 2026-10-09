@@ -5,6 +5,11 @@ Lean is a small, fast native code editor built with [GPUI](https://www.gpui.rs) 
 
 It focuses on a few things: editing code, a clear git view, a built-in terminal and a minimap.
 
+## Download
+
+Builds for Linux, Windows and macOS are on the [releases page](https://github.com/vaakx-dev/lean/releases).
+The `nightly` release is rebuilt from `main` each day it changes.
+
 ## Build and run
 
 Install Rust with rustup (the toolchain is pinned in `rust-toolchain.toml`) and the GPUI

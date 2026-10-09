@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check that the tag matches crates/lean/Cargo.toml
+        run: test "v$(sed -n 's/^version = "\(.*\)"$/\1/p' crates/lean/Cargo.toml | head -1)" = "$GITHUB_REF_NAME"
+
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ github.ref }}
+      profile: dist
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: lean-*
+          path: assets
+          merge-multiple: true
+      - name: Write the checksums
+        run: cd assets && sha256sum * > SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "Lean $GITHUB_REF_NAME" $prerelease assets/*
