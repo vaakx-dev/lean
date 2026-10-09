@@ -16,6 +16,7 @@ pub(super) struct TextBatch {
     cells: usize,
     wide: bool,
     text: String,
+    padding: usize,
     style: CellStyle,
 }
 
@@ -27,6 +28,7 @@ impl TextBatch {
             cells: 0,
             wide,
             text: String::new(),
+            padding: 0,
             style,
         }
     }
@@ -35,21 +37,36 @@ impl TextBatch {
         !self.wide && self.line == line && self.column + self.cells == column && self.style == style
     }
 
+    pub(super) fn accepts_padding(&self, line: usize, column: usize) -> bool {
+        !self.wide
+            && !self.style.is_decorated()
+            && self.line == line
+            && self.column + self.cells == column
+    }
+
     pub(super) fn append(&mut self, cell: &Cell, cells: usize) {
         self.text.push(if cell.c == '\t' { ' ' } else { cell.c });
         if let Some(zerowidth) = cell.zerowidth() {
             self.text.extend(zerowidth);
         }
         self.cells += cells;
+        self.padding = 0;
+    }
+
+    pub(super) fn pad(&mut self) {
+        self.text.push(' ');
+        self.cells += 1;
+        self.padding += 1;
     }
 
     pub(super) fn shape(
-        self,
+        mut self,
         origin: Point<Pixels>,
         appearance: &TerminalAppearance,
         metrics: &CellMetrics,
         window: &Window,
     ) -> (Point<Pixels>, ShapedLine) {
+        self.text.truncate(self.text.len() - self.padding);
         let run = self.text_run(appearance);
         let line = window.text_system().shape_line(
             SharedString::from(self.text),

@@ -18,15 +18,15 @@ struct BackgroundSpan {
     color: Hsla,
 }
 
-pub(super) struct GridScan<'a> {
+pub(super) struct GridScan {
     palette: Palette,
-    overrides: &'a Colors,
+    overrides: Colors,
     batches: Vec<TextBatch>,
     backgrounds: Vec<BackgroundSpan>,
 }
 
-impl<'a> GridScan<'a> {
-    pub(super) fn new(palette: Palette, overrides: &'a Colors) -> Self {
+impl GridScan {
+    pub(super) fn new(palette: Palette, overrides: Colors) -> Self {
         Self {
             palette,
             overrides,
@@ -52,7 +52,7 @@ impl<'a> GridScan<'a> {
             return;
         };
         let (line, column) = (position.line, position.column.0);
-        let mut style = CellStyle::of(cell, &self.palette, self.overrides);
+        let mut style = CellStyle::of(cell, &self.palette, &self.overrides);
         if cursor.is_some_and(|cursor| cursor.is_solid_block_at(line, column)) {
             style = style.under_cursor(&self.palette);
         }
@@ -63,6 +63,8 @@ impl<'a> GridScan<'a> {
         }
         if !is_blank(cell) || style.is_decorated() {
             self.push_text(line, column, cells, wide, cell, style);
+        } else if !wide {
+            self.pad_text(line, column);
         }
     }
 
@@ -132,6 +134,14 @@ impl<'a> GridScan<'a> {
         let mut batch = TextBatch::start(line, column, wide, style);
         batch.append(cell, cells);
         self.batches.push(batch);
+    }
+
+    fn pad_text(&mut self, line: usize, column: usize) {
+        if let Some(batch) = self.batches.last_mut()
+            && batch.accepts_padding(line, column)
+        {
+            batch.pad();
+        }
     }
 }
 

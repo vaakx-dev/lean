@@ -12,14 +12,22 @@ use crate::assets;
 const THEME_PATH: &str = "themes/lean-dark.json";
 
 pub(crate) fn init(cx: &mut App) {
-    match load_theme() {
+    let config = match load_theme() {
         Ok(mut config) => {
             fonts::drop_missing_fonts(&mut config, cx);
-            Theme::update(cx, |theme| theme.apply_config(&Rc::new(config)));
+            Some(Rc::new(config))
         }
-        Err(error) => log::error!("failed to load the Lean theme: {error:#}"),
-    }
-    Theme::set_scrollbar_mode(ScrollbarMode::Always, cx);
+        Err(error) => {
+            log::error!("failed to load the Lean theme: {error:#}");
+            None
+        }
+    };
+    Theme::update(cx, |theme| {
+        if let Some(config) = &config {
+            theme.apply_config(config);
+        }
+        theme.scrollbar_mode = ScrollbarMode::Always;
+    });
 }
 
 fn load_theme() -> Result<ThemeConfig> {

@@ -25,8 +25,7 @@ pub(crate) fn terminal_canvas(
         move |bounds, window, _| {
             let metrics = CellMetrics::measure(&appearance, window);
             session.resize(metrics.fit(bounds.size));
-            let term = session.lock();
-            GridLayout::build(&*term, &appearance, &metrics, bounds.origin, window)
+            GridLayout::build(&session, &appearance, &metrics, bounds.origin, window)
         },
         |_, layout, window, cx| layout.paint(window, cx),
     )
