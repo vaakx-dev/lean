@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::{AppContext as _, Context, Window};
 
-use crate::explorer::{Explorer, ExplorerEvent};
+use crate::explorer::Explorer;
 use crate::files::file_name;
+use crate::plugins::PanelEvent;
 
 impl Explorer {
     pub(super) fn create_entry(
@@ -45,7 +46,7 @@ impl Explorer {
         };
         self.finish_file_operation(folder, Some(path.clone()), cx);
         if !is_dir {
-            cx.emit(ExplorerEvent::OpenFile(path));
+            cx.emit(PanelEvent::OpenFile(path));
         }
     }
 }

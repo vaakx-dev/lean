@@ -57,33 +57,34 @@ impl Explorer {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(project_name),
             )
-            .child(header_button(
-                "refresh",
-                "icons/refresh-cw.svg",
-                "Refresh Explorer",
-                RefreshExplorer,
-            ))
-            .child(header_button(
-                "collapse",
-                "icons/list-collapse.svg",
-                "Collapse Folders in Explorer",
-                CollapseAllFolders,
-            ))
+            .child(
+                header_button("refresh", "icons/refresh-cw.svg", "Refresh Explorer").on_click(
+                    cx.listener(|explorer, _, window, cx| {
+                        cx.stop_propagation();
+                        explorer.refresh(&RefreshExplorer, window, cx)
+                    }),
+                ),
+            )
+            .child(
+                header_button(
+                    "collapse",
+                    "icons/list-collapse.svg",
+                    "Collapse Folders in Explorer",
+                )
+                .on_click(cx.listener(|explorer, _, window, cx| {
+                    cx.stop_propagation();
+                    explorer.collapse_all(&CollapseAllFolders, window, cx)
+                })),
+            )
     }
 }
 
-fn header_button(
-    id: &'static str,
-    icon: &'static str,
-    tooltip: &'static str,
-    action: impl Action,
-) -> Button {
+fn header_button(id: &'static str, icon: &'static str, tooltip: &'static str) -> Button {
     Button::new(id)
         .ghost()
         .xsmall()
         .icon(Icon::empty().path(icon))
         .tooltip(tooltip)
-        .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
 }
 
 impl Render for Explorer {

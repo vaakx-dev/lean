@@ -1,7 +1,8 @@
 use gpui_kit::{App, Context, KeyBinding, ScrollStrategy, Window, actions};
 
 use super::file_operations::{DeleteSelected, RenameSelected};
-use super::{Explorer, ExplorerEvent, VisibleEntry};
+use super::{Explorer, VisibleEntry};
+use crate::plugins::PanelEvent;
 
 actions!(
     explorer,
@@ -118,7 +119,7 @@ impl Explorer {
         if entry.is_dir {
             self.toggle_folder(path, cx);
         } else {
-            cx.emit(ExplorerEvent::OpenFile(path));
+            cx.emit(PanelEvent::OpenFile(path));
         }
     }
 

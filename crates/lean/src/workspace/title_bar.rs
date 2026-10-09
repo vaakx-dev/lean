@@ -12,9 +12,10 @@ const SEARCH_BOX_MIN_WINDOW_WIDTH: Pixels = px(760.);
 impl Workspace {
     pub(super) fn render_title_bar(&self, window: &Window, cx: &Context<Self>) -> TitleBar {
         let theme = cx.theme();
-        let project_name = self.project.read(cx).name().clone();
+        let project_name = self.context.project.read(cx).name().clone();
         let has_room_for_search = window.viewport_size().width >= SEARCH_BOX_MIN_WINDOW_WIDTH;
         TitleBar::new()
+            .on_close_window(Self::close_window_handler(cx))
             .bg(theme.background)
             .border_b_0()
             .pl_2()
@@ -44,13 +45,13 @@ impl Workspace {
                     .pr_1()
                     .child(layout_toggle(
                         "toggle-sidebar",
-                        if self.sidebar_visible {
+                        if self.shows_sidebar() {
                             "icons/panel-left.svg"
                         } else {
                             "icons/panel-left-open.svg"
                         },
                         "Toggle Sidebar (Ctrl+B)",
-                        self.sidebar_visible,
+                        self.shows_sidebar(),
                         ToggleSidebar,
                     ))
                     .child(layout_toggle(

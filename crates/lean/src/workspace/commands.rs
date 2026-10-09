@@ -2,24 +2,24 @@ use gpui_kit::component::WindowExt as _;
 use gpui_kit::*;
 
 use super::Workspace;
-use super::sidebar::SidebarView;
 use crate::app::actions::{
-    About, CloseActiveEditor, NextEditor, PreviousEditor, SaveActiveEditor, ShowExplorer,
-    ShowSearch, ShowSourceControl, ToggleSidebar, ToggleTerminal,
+    About, CloseActiveEditor, NextEditor, PreviousEditor, SaveActiveEditor, ShowPanel,
+    ToggleSidebar, ToggleTerminal,
 };
 
 pub(super) fn bind_commands(element: Stateful<Div>, cx: &Context<Workspace>) -> Stateful<Div> {
     element
         .on_action(cx.listener(Workspace::open_folder))
+        .on_action(cx.listener(Workspace::open_recent))
+        .on_action(cx.listener(Workspace::open_recent_project))
+        .on_action(cx.listener(Workspace::clear_recent_projects))
         .on_action(cx.listener(Workspace::save_active_editor))
         .on_action(cx.listener(Workspace::close_active_editor))
         .on_action(cx.listener(Workspace::next_editor))
         .on_action(cx.listener(Workspace::previous_editor))
         .on_action(cx.listener(Workspace::toggle_sidebar))
         .on_action(cx.listener(Workspace::toggle_terminal))
-        .on_action(cx.listener(Workspace::show_explorer))
-        .on_action(cx.listener(Workspace::show_search))
-        .on_action(cx.listener(Workspace::show_source_control))
+        .on_action(cx.listener(Workspace::show_panel_action))
         .on_action(cx.listener(Workspace::about))
 }
 
@@ -30,7 +30,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.editor_area
+        self.context
+            .editor_area
             .update(cx, |area, cx| area.save_active(window, cx));
     }
 
@@ -40,17 +41,20 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.editor_area
+        self.context
+            .editor_area
             .update(cx, |area, cx| area.close_active(window, cx));
     }
 
     fn next_editor(&mut self, _: &NextEditor, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor_area
+        self.context
+            .editor_area
             .update(cx, |area, cx| area.activate_next(window, cx));
     }
 
     fn previous_editor(&mut self, _: &PreviousEditor, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor_area
+        self.context
+            .editor_area
             .update(cx, |area, cx| area.activate_previous(window, cx));
     }
 
@@ -71,21 +75,13 @@ impl Workspace {
         }
     }
 
-    fn show_explorer(&mut self, _: &ShowExplorer, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_view(SidebarView::Explorer, window, cx);
-    }
-
-    fn show_search(&mut self, _: &ShowSearch, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_view(SidebarView::Search, window, cx);
-    }
-
-    fn show_source_control(
+    fn show_panel_action(
         &mut self,
-        _: &ShowSourceControl,
+        action: &ShowPanel,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.show_view(SidebarView::SourceControl, window, cx);
+        self.show_panel(action.id, window, cx);
     }
 
     fn about(&mut self, _: &About, window: &mut Window, cx: &mut Context<Self>) {

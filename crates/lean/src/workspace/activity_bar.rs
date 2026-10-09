@@ -1,20 +1,17 @@
-use gpui_kit::component::{ActiveTheme as _, Icon, Theme, WindowExt as _, v_flex};
+use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::{ActiveTheme as _, Icon, Theme, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::Workspace;
-use super::sidebar::SidebarView;
+use super::panels::SidebarPanel;
+use crate::plugins::open_plugin_manager;
 
 pub(super) const ACTIVITY_BAR_WIDTH: Pixels = px(52.);
 
 impl Workspace {
     pub(super) fn render_activity_bar(&self, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        let change_count = self
-            .project
-            .read(cx)
-            .git()
-            .map_or(0, |git| git.statuses.len());
         v_flex()
             .w(ACTIVITY_BAR_WIDTH)
             .flex_shrink_0()
@@ -23,50 +20,46 @@ impl Workspace {
             .justify_between()
             .pb_1()
             .child(
-                v_flex()
-                    .gap_1()
-                    .child(self.render_activity_item(SidebarView::Explorer, "icons/files.svg", cx))
-                    .child(self.render_activity_item(SidebarView::Search, "icons/search.svg", cx))
-                    .child(
-                        self.render_activity_item(
-                            SidebarView::SourceControl,
-                            "icons/git-branch.svg",
-                            cx,
-                        )
-                        .when(change_count > 0, |item| {
-                            item.child(change_badge(change_count, theme))
-                        }),
-                    ),
+                v_flex().gap_1().children(
+                    self.panels
+                        .iter()
+                        .enumerate()
+                        .map(|(index, panel)| self.render_activity_item(index, panel, cx)),
+                ),
             )
             .child(
-                activity_button("settings", "icons/settings.svg", theme).on_click(
-                    |_, window, cx| window.push_notification("Settings are not available yet.", cx),
-                ),
+                activity_button("settings", "icons/settings.svg", "Plugins", theme)
+                    .on_click(|_, window, cx| open_plugin_manager(window, cx)),
             )
     }
 
     fn render_activity_item(
         &self,
-        view: SidebarView,
-        icon: &'static str,
+        index: usize,
+        panel: &SidebarPanel,
         cx: &Context<Self>,
     ) -> Stateful<Div> {
         let theme = cx.theme();
-        let is_active = self.sidebar_visible && self.sidebar_view == view;
-        activity_button(view.title(), icon, theme)
+        let is_active = self.sidebar_visible && self.active_panel == index;
+        let badge = panel.view.badge(cx);
+        activity_button(panel.panel.id, panel.panel.icon, panel.panel.title, theme)
             .relative()
             .when(is_active, |item| {
                 item.bg(theme.accent).text_color(theme.foreground)
             })
-            .on_click(
-                cx.listener(move |workspace, _, window, cx| {
-                    workspace.toggle_view(view, window, cx)
-                }),
-            )
+            .when(badge > 0, |item| item.child(badge_count(badge, theme)))
+            .on_click(cx.listener(move |workspace, _, window, cx| {
+                workspace.toggle_panel(index, window, cx)
+            }))
     }
 }
 
-fn activity_button(id: &'static str, icon: &'static str, theme: &Theme) -> Stateful<Div> {
+fn activity_button(
+    id: &'static str,
+    icon: &'static str,
+    title: &'static str,
+    theme: &Theme,
+) -> Stateful<Div> {
     div()
         .id(id)
         .size(px(40.))
@@ -77,10 +70,11 @@ fn activity_button(id: &'static str, icon: &'static str, theme: &Theme) -> State
         .cursor_pointer()
         .text_color(theme.muted_foreground)
         .hover(|style| style.text_color(theme.foreground))
+        .tooltip(move |window, cx| Tooltip::new(title).build(window, cx))
         .child(Icon::empty().path(icon).size(px(22.)))
 }
 
-fn change_badge(count: usize, theme: &Theme) -> Div {
+fn badge_count(count: usize, theme: &Theme) -> Div {
     let text = if count > 999 {
         "999+".to_string()
     } else {

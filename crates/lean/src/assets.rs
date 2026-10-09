@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use anyhow::Result;
+use gpui_kit::assets::icon_assets;
 use gpui_kit::{AssetSource, SharedString};
 
 pub(crate) struct Assets;
@@ -12,12 +13,50 @@ pub(crate) struct Assets;
 #[include = "themes/**/*"]
 struct LeanAssets;
 
+icon_assets!(
+    ExtraIcons,
+    [
+        Braces,
+        Clock,
+        Code,
+        Columns2,
+        Eraser,
+        FastForward,
+        FileCode,
+        FileDiff,
+        FileImage,
+        FileInput,
+        FileX,
+        Files,
+        GitBranch,
+        GitCompare,
+        Image,
+        List,
+        ListCollapse,
+        ListTree,
+        Lock,
+        NotebookText,
+        Pencil,
+        Regex,
+        RotateCcw,
+        TextSearch,
+        Trash,
+        WholeWord,
+        X,
+        ZoomIn,
+        ZoomOut,
+    ]
+);
+
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         if let Some(file) = LeanAssets::get(path) {
             return Ok(Some(file.data));
         }
-        gpui_kit::assets::AllAssets.load(path)
+        if let Some(icon) = ExtraIcons.load(path)? {
+            return Ok(Some(icon));
+        }
+        gpui_kit::assets::Assets.load(path)
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
@@ -25,7 +64,8 @@ impl AssetSource for Assets {
             .filter(|file| file.starts_with(path))
             .map(SharedString::from)
             .collect();
-        paths.extend(gpui_kit::assets::AllAssets.list(path)?);
+        paths.extend(ExtraIcons.list(path)?);
+        paths.extend(gpui_kit::assets::Assets.list(path)?);
         Ok(paths)
     }
 }

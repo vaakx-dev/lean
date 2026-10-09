@@ -14,7 +14,7 @@ impl Workspace {
             .pt(GAP)
             .pr(GAP)
             .child(self.render_activity_bar(cx))
-            .when(self.sidebar_visible, |body| {
+            .when(self.shows_sidebar(), |body| {
                 body.child(self.render_sidebar(cx))
                     .child(self.render_resize_handle(cx))
             })
@@ -36,7 +36,12 @@ impl Workspace {
                     .border_1()
                     .border_color(theme.border)
                     .bg(theme.sidebar)
-                    .child(self.editor_area.clone()),
+                    .child(
+                        self.context
+                            .editor_area
+                            .clone()
+                            .cached(StyleRefinement::default().size_full()),
+                    ),
             )
             .children(self.render_terminal_panel(cx))
     }
