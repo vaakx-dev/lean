@@ -5,6 +5,7 @@ mod edit_confirmation;
 mod edit_field;
 mod inline_edit;
 mod name_validation;
+mod permanent_delete;
 mod rename;
 mod reveal;
 
@@ -69,6 +70,6 @@ impl Explorer {
     ) {
         self.load_directory_and_reveal(folder, reveal, cx);
         self.project
-            .update(cx, |project, cx| project.refresh_git(cx));
+            .update(cx, |project, cx| project.files_touched(cx));
     }
 }

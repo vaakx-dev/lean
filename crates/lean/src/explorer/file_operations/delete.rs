@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use gpui_kit::component::WindowExt as _;
 use gpui_kit::{AppContext as _, Context, PromptLevel, SharedString, Window};
 
 use super::DeleteSelected;
-use crate::explorer::{Explorer, ExplorerEvent};
+use crate::explorer::Explorer;
+use crate::plugins::PanelEvent;
 
 const MOVE_TO_TRASH_ANSWER: usize = 0;
 
@@ -65,10 +65,8 @@ impl Explorer {
                 Ok(()) => explorer.finish_delete(path, cx),
                 Err(error) => {
                     log::warn!("failed to move {} to the trash: {error}", path.display());
-                    window.push_notification(
-                        format!("Can't move \"{name}\" to the {TRASH_NAME}: {error}"),
-                        cx,
-                    );
+                    let reason = format!("Can't move \"{name}\" to the {TRASH_NAME}: {error}");
+                    explorer.offer_permanent_delete(path, name, reason, window, cx);
                 }
             });
             if let Err(error) = update {
@@ -78,7 +76,7 @@ impl Explorer {
         .detach();
     }
 
-    fn finish_delete(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub(super) fn finish_delete(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let index = self
             .visible
             .iter()
@@ -101,7 +99,7 @@ impl Explorer {
         if let Some(folder) = path.parent().map(Path::to_path_buf) {
             self.finish_file_operation(folder, None, cx);
         }
-        cx.emit(ExplorerEvent::PathDeleted(path));
+        cx.emit(PanelEvent::PathDeleted(path));
         cx.notify();
     }
 }

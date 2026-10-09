@@ -22,6 +22,11 @@ impl Workspace {
                 }),
             )
     }
+
+    fn stop_sidebar_resize(&mut self, cx: &mut Context<Self>) {
+        self.resizing_sidebar = false;
+        cx.notify();
+    }
 }
 
 pub(super) fn track_sidebar_resize(
@@ -31,15 +36,21 @@ pub(super) fn track_sidebar_resize(
     element
         .cursor_col_resize()
         .on_mouse_move(cx.listener(|workspace, event: &MouseMoveEvent, _, cx| {
+            if event.pressed_button != Some(MouseButton::Left) {
+                workspace.stop_sidebar_resize(cx);
+                return;
+            }
             let width = event.position.x - ACTIVITY_BAR_WIDTH - GAP;
             workspace.sidebar_width = width.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
             cx.notify();
         }))
-        .on_mouse_up(
+        .capture_any_mouse_up(cx.listener(|workspace, event: &MouseUpEvent, _, cx| {
+            if event.button == MouseButton::Left {
+                workspace.stop_sidebar_resize(cx);
+            }
+        }))
+        .on_mouse_up_out(
             MouseButton::Left,
-            cx.listener(|workspace, _, _, cx| {
-                workspace.resizing_sidebar = false;
-                cx.notify();
-            }),
+            cx.listener(|workspace, _, _, cx| workspace.stop_sidebar_resize(cx)),
         )
 }

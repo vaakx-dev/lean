@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::{AppContext as _, Context, Window};
 
-use crate::explorer::{Explorer, ExplorerEvent};
+use crate::explorer::Explorer;
 use crate::files::file_name;
+use crate::plugins::PanelEvent;
 
 impl Explorer {
     pub(super) fn rename_entry(
@@ -54,7 +55,7 @@ impl Explorer {
         if let Some(folder) = to.parent().map(Path::to_path_buf) {
             self.finish_file_operation(folder, Some(to.clone()), cx);
         }
-        cx.emit(ExplorerEvent::PathRenamed { from, to });
+        cx.emit(PanelEvent::PathRenamed { from, to });
     }
 }
 
@@ -68,13 +69,38 @@ fn moved_path(path: &Path, from: &Path, to: &Path) -> Option<PathBuf> {
 }
 
 fn rename_on_disk(from: &Path, to: &Path) -> io::Result<()> {
-    let is_case_change =
-        from.to_string_lossy().to_lowercase() == to.to_string_lossy().to_lowercase();
-    if !is_case_change && to.symlink_metadata().is_ok() {
+    if to.symlink_metadata().is_ok() && !is_same_entry(from, to) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             "a file or folder with this name already exists",
         ));
     }
     std::fs::rename(from, to)
+}
+
+fn is_same_entry(from: &Path, to: &Path) -> bool {
+    let same_name = match (from.file_name(), to.file_name()) {
+        (Some(from), Some(to)) => {
+            from.to_string_lossy().to_lowercase() == to.to_string_lossy().to_lowercase()
+        }
+        _ => false,
+    };
+    same_name && from.parent() == to.parent() && is_same_file(from, to)
+}
+
+#[cfg(unix)]
+fn is_same_file(from: &Path, to: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    match (from.symlink_metadata(), to.symlink_metadata()) {
+        (Ok(from), Ok(to)) => from.dev() == to.dev() && from.ino() == to.ino(),
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn is_same_file(from: &Path, to: &Path) -> bool {
+    match (dunce::canonicalize(from), dunce::canonicalize(to)) {
+        (Ok(from), Ok(to)) => from == to,
+        _ => false,
+    }
 }
