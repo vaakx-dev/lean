@@ -46,12 +46,7 @@ impl TerminalPanel {
             .gap_1()
             .overflow_x_scroll();
         match self.tabs.as_slice() {
-            [tab] => titles.child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .child(tab.view.read(cx).shell_name()),
-            ),
+            [tab] => titles.child(div().min_w_0().truncate().child(tab.shell_name.clone())),
             tabs => titles.children(
                 tabs.iter()
                     .enumerate()
@@ -63,7 +58,7 @@ impl TerminalPanel {
     fn render_tab(&self, index: usize, tab: &TerminalTab, cx: &Context<Self>) -> Stateful<Div> {
         let theme = cx.theme();
         let is_active = index == self.active;
-        let title = format!("{} {}", tab.view.read(cx).shell_name(), index + 1);
+        let title = format!("{} {}", tab.shell_name, index + 1);
         h_flex()
             .id(index)
             .group(TAB_GROUP)

@@ -9,13 +9,36 @@ const FALLBACK_SHELL: &str = "/bin/sh";
 #[cfg(windows)]
 const WINDOWS_SHELL: &str = "powershell.exe";
 
-pub(crate) fn shell_options(working_directory: &Path) -> Options {
+pub(crate) fn shell_options(
+    working_directory: &Path,
+    environment: &HashMap<String, String>,
+) -> Options {
+    let mut env = shell_environment();
+    env.extend(environment.clone());
     Options {
         shell: Some(Shell::new(shell_program(), Vec::new())),
         working_directory: Some(working_directory.to_path_buf()),
         drain_on_exit: true,
-        env: shell_environment(),
+        env,
         ..Options::default()
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShellKind {
+    Posix,
+    Fish,
+    PowerShell,
+    Other,
+}
+
+pub(crate) fn shell_kind() -> ShellKind {
+    let name = shell_name().to_lowercase();
+    match name.strip_suffix(".exe").unwrap_or(&name) {
+        "sh" | "bash" | "zsh" | "dash" | "ksh" => ShellKind::Posix,
+        "fish" => ShellKind::Fish,
+        "pwsh" | "powershell" => ShellKind::PowerShell,
+        _ => ShellKind::Other,
     }
 }
 

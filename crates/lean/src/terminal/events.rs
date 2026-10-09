@@ -10,7 +10,10 @@ use super::view::TerminalView;
 impl TerminalView {
     pub(super) fn handle_event(&mut self, event: Event, cx: &mut Context<Self>) {
         match event {
-            Event::Wakeup => cx.notify(),
+            Event::Wakeup => {
+                self.startup_output_arrived(cx);
+                cx.notify();
+            }
             Event::Exit | Event::ChildExit(_) => self.mark_exited(cx),
             Event::PtyWrite(text) => self.write(text.into_bytes()),
             Event::ClipboardStore(_, text) => {

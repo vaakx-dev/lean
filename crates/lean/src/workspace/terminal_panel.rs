@@ -26,7 +26,8 @@ impl Workspace {
             .as_ref()
             .is_some_and(|dock| dock.panel.read(cx).contains_focus(window, cx));
         if terminal_has_focus {
-            self.editor_area
+            self.context
+                .editor_area
                 .update(cx, |area, cx| area.focus_active(window, cx));
         }
         cx.notify();
@@ -37,6 +38,20 @@ impl Workspace {
         if self.terminal_visible {
             self.terminal_panel(window, cx);
         }
+    }
+
+    pub(super) fn sync_terminal_launch(&mut self, cx: &mut Context<Self>) {
+        let Some(dock) = &self.terminal else {
+            return;
+        };
+        let launch = self.terminal_launch(cx);
+        dock.panel.update(cx, |panel, _| panel.set_launch(launch));
+    }
+
+    pub(super) fn running_terminal_count(&self, cx: &App) -> usize {
+        self.terminal
+            .as_ref()
+            .map_or(0, |dock| dock.panel.read(cx).running_count(cx))
     }
 
     pub(super) fn render_terminal_panel(&self, cx: &App) -> Option<Div> {
@@ -53,7 +68,11 @@ impl Workspace {
                 .border_1()
                 .border_color(theme.border)
                 .bg(theme.sidebar)
-                .child(dock.panel.clone()),
+                .child(
+                    dock.panel
+                        .clone()
+                        .cached(StyleRefinement::default().size_full()),
+                ),
         )
     }
 
@@ -65,8 +84,9 @@ impl Workspace {
         if let Some(dock) = &self.terminal {
             return dock.panel.clone();
         }
-        let root = self.project.read(cx).root().to_path_buf();
-        let panel = cx.new(|cx| TerminalPanel::new(root, cx));
+        let root = self.context.project.read(cx).root().to_path_buf();
+        let launch = self.terminal_launch(cx);
+        let panel = cx.new(|cx| TerminalPanel::new(root, launch, cx));
         let subscription = cx.subscribe_in(
             &panel,
             window,

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use gpui_kit::component::v_flex;
 use gpui_kit::*;
 
+use super::launch::TerminalLaunch;
 use super::view::{TerminalEvent, TerminalView};
 
 pub(crate) enum TerminalPanelEvent {
@@ -13,11 +14,13 @@ pub(crate) enum TerminalPanelEvent {
 
 struct TerminalTab {
     view: Entity<TerminalView>,
+    shell_name: SharedString,
     _subscription: Subscription,
 }
 
 pub(crate) struct TerminalPanel {
     working_directory: PathBuf,
+    launch: TerminalLaunch,
     tabs: Vec<TerminalTab>,
     active: usize,
 }
@@ -25,9 +28,14 @@ pub(crate) struct TerminalPanel {
 impl EventEmitter<TerminalPanelEvent> for TerminalPanel {}
 
 impl TerminalPanel {
-    pub(crate) fn new(working_directory: PathBuf, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        working_directory: PathBuf,
+        launch: TerminalLaunch,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut panel = Self {
             working_directory,
+            launch,
             tabs: Vec::new(),
             active: 0,
         };
@@ -35,11 +43,22 @@ impl TerminalPanel {
         panel
     }
 
+    pub(crate) fn set_launch(&mut self, launch: TerminalLaunch) {
+        self.launch = launch;
+    }
+
     pub(crate) fn focus_active(&self, window: &mut Window, cx: &mut App) {
         if let Some(tab) = self.tabs.get(self.active) {
             let focus_handle = tab.view.focus_handle(cx);
             window.focus(&focus_handle, cx);
         }
+    }
+
+    pub(crate) fn running_count(&self, cx: &App) -> usize {
+        self.tabs
+            .iter()
+            .filter(|tab| tab.view.read(cx).is_running())
+            .count()
     }
 
     pub(crate) fn contains_focus(&self, window: &Window, cx: &App) -> bool {
@@ -50,12 +69,15 @@ impl TerminalPanel {
 
     fn add_terminal(&mut self, cx: &mut Context<Self>) {
         let working_directory = self.working_directory.clone();
-        let view = cx.new(|cx| TerminalView::new(working_directory, cx));
+        let launch = self.launch.clone();
+        let view = cx.new(|cx| TerminalView::new(working_directory, launch, cx));
+        let shell_name = view.read(cx).shell_name();
         let subscription = cx.subscribe(&view, |_, _, event: &TerminalEvent, cx| match event {
             TerminalEvent::Exited => cx.notify(),
         });
         self.tabs.push(TerminalTab {
             view,
+            shell_name,
             _subscription: subscription,
         });
         self.active = self.tabs.len() - 1;

@@ -4,6 +4,7 @@ mod shell;
 
 use std::borrow::Cow;
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::io;
 use std::ops::DerefMut;
 use std::path::Path;
@@ -19,7 +20,7 @@ use futures::channel::mpsc::UnboundedSender;
 
 pub(crate) use grid_size::GridSize;
 use listener::EventProxy;
-pub(crate) use shell::shell_name;
+pub(crate) use shell::{ShellKind, shell_kind, shell_name};
 
 const WINDOW_ID: u64 = 0;
 
@@ -32,11 +33,12 @@ pub(crate) struct TerminalSession {
 impl TerminalSession {
     pub(crate) fn spawn(
         working_directory: &Path,
+        environment: &HashMap<String, String>,
         events: UnboundedSender<Event>,
     ) -> io::Result<Self> {
         let size = GridSize::default();
         let listener = EventProxy::new(events);
-        let options = shell::shell_options(working_directory);
+        let options = shell::shell_options(working_directory, environment);
         let pty = tty::new(&options, size.window_size(), WINDOW_ID)?;
         let term = Term::new(Config::default(), &size, listener.clone());
         let term = Arc::new(FairMutex::new(term));

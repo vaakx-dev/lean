@@ -8,8 +8,10 @@ use gpui_kit::component::{ActiveTheme as _, v_flex};
 use gpui_kit::*;
 
 use super::input::KEY_CONTEXT;
+use super::launch::TerminalLaunch;
 use super::render::{CursorAppearance, TerminalAppearance, terminal_canvas};
 use super::session::{TerminalSession, shell_name};
+use super::startup::StartupCommand;
 
 const EXITED_MESSAGE: &str = "Process exited. Press Enter to restart.";
 
@@ -25,6 +27,8 @@ enum TerminalStatus {
 
 pub(crate) struct TerminalView {
     working_directory: PathBuf,
+    pub(super) launch: TerminalLaunch,
+    pub(super) startup: StartupCommand,
     shell_name: SharedString,
     session: Option<Rc<TerminalSession>>,
     status: TerminalStatus,
@@ -36,9 +40,15 @@ pub(crate) struct TerminalView {
 impl EventEmitter<TerminalEvent> for TerminalView {}
 
 impl TerminalView {
-    pub(crate) fn new(working_directory: PathBuf, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        working_directory: PathBuf,
+        launch: TerminalLaunch,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut view = Self {
             working_directory,
+            launch,
+            startup: StartupCommand::default(),
             shell_name: shell_name(),
             session: None,
             status: TerminalStatus::Running,
@@ -52,11 +62,12 @@ impl TerminalView {
 
     pub(super) fn start(&mut self, cx: &mut Context<Self>) {
         let (sender, receiver) = unbounded();
-        match TerminalSession::spawn(&self.working_directory, sender) {
+        match TerminalSession::spawn(&self.working_directory, &self.launch.environment, sender) {
             Ok(session) => {
                 self.session = Some(Rc::new(session));
                 self.status = TerminalStatus::Running;
                 self._event_task = Some(Self::listen(receiver, cx));
+                self.queue_startup_command(cx);
             }
             Err(error) => {
                 log::error!("failed to start the terminal shell: {error}");
@@ -94,7 +105,16 @@ impl TerminalView {
     fn listen(mut receiver: UnboundedReceiver<Event>, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |view, cx| {
             while let Some(event) = receiver.next().await {
-                if let Err(error) = view.update(cx, |view, cx| view.handle_event(event, cx)) {
+                let mut events = vec![event];
+                while let Ok(event) = receiver.try_recv() {
+                    events.push(event);
+                }
+                let handled = view.update(cx, |view, cx| {
+                    for event in events {
+                        view.handle_event(event, cx);
+                    }
+                });
+                if let Err(error) = handled {
                     log::debug!("terminal view dropped while its shell was running: {error:#}");
                     break;
                 }
