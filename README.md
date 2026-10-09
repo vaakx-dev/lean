@@ -11,9 +11,12 @@ Install Rust with rustup (the toolchain is pinned in `rust-toolchain.toml`) and 
 Linux dependencies (Vulkan, Wayland/X11, xkbcommon, fontconfig).
 
 ```sh
+git clone https://github.com/vaakx-dev/lean.git
+cd lean
 cargo run -- /path/to/project
 ```
 
 ## License
 
-MIT.
+Lean is MIT licensed, see [LICENSE](LICENSE). The patched GPUI crates in `vendor/` keep their
+upstream Apache-2.0 licenses.

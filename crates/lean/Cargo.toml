@@ -1,10 +1,17 @@
 [package]
 name = "lean"
 version = "0.1.0"
-description = "Lean: a small, fast code editor built with GPUI."
+description = "A small, fast native code editor built with GPUI"
+readme = "../../README.md"
+keywords = ["editor", "gpui", "code-editor", "terminal", "git"]
+categories = ["text-editors", "development-tools"]
 edition.workspace = true
+rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [[bin]]
 name = "lean"

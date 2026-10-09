@@ -6,8 +6,12 @@ exclude = ["vendor"]
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.98"
 publish = false
 license = "MIT"
+authors = ["vaakx-dev <vaakxx@proton.me>"]
+repository = "https://github.com/vaakx-dev/lean"
+homepage = "https://github.com/vaakx-dev/lean"
 
 [workspace.dependencies]
 anyhow = "1"
