@@ -4,6 +4,10 @@ use gpui_kit::*;
 
 use super::viewport::EditorViewport;
 
+pub(super) const WIDTH: Pixels = px(WIDTH_PIXELS);
+pub(super) const MAX_COLUMNS: usize = ((WIDTH_PIXELS - TEXT_INSET) / COLUMN_WIDTH) as usize;
+
+const WIDTH_PIXELS: f32 = 100.;
 const LINE_HEIGHT: f32 = 2.;
 const COLUMN_WIDTH: f32 = 1.;
 const TEXT_INSET: f32 = 6.;
@@ -11,6 +15,7 @@ const TEXT_INSET: f32 = 6.;
 #[derive(Clone, Copy)]
 pub(super) struct Geometry {
     bounds: Bounds<Pixels>,
+    line_count: usize,
     scroll_top: f32,
     slider_top: f32,
     slider_height: f32,
@@ -38,6 +43,7 @@ impl Geometry {
         };
         Self {
             bounds,
+            line_count: viewport.line_count,
             scroll_top,
             slider_top: viewport.top_line * LINE_HEIGHT - scroll_top,
             slider_height,
@@ -45,15 +51,20 @@ impl Geometry {
         }
     }
 
-    pub(super) fn visible_lines(&self, line_count: usize) -> Range<usize> {
+    pub(super) fn with_height(height: Pixels, viewport: &EditorViewport) -> Self {
+        let bounds = Bounds::new(point(px(0.), px(0.)), size(WIDTH, height));
+        Self::new(bounds, viewport)
+    }
+
+    pub(super) fn visible_lines(&self) -> Range<usize> {
         let height = f32::from(self.bounds.size.height);
         let first = (self.scroll_top / LINE_HEIGHT).floor() as usize;
         let last = ((self.scroll_top + height) / LINE_HEIGHT).ceil() as usize;
-        let end = last.min(line_count);
+        let end = last.min(self.line_count);
         first.min(end)..end
     }
 
-    pub(super) fn block_bounds(&self, line: usize, column: u16, width: u16) -> Bounds<Pixels> {
+    pub(super) fn block_bounds(&self, line: usize, column: u8, width: u8) -> Bounds<Pixels> {
         let top = line as f32 * LINE_HEIGHT - self.scroll_top;
         let left = TEXT_INSET + f32::from(column) * COLUMN_WIDTH;
         Bounds::new(
