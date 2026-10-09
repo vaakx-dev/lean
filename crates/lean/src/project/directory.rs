@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use gpui_kit::{App, AppContext as _, SharedString, Task};
 
-use crate::git::IgnoreRules;
+use super::IgnoreCache;
 
 pub(crate) struct DirectoryEntry {
     pub(crate) path: PathBuf,
@@ -11,13 +11,16 @@ pub(crate) struct DirectoryEntry {
     pub(crate) is_dir: bool,
 }
 
-pub(crate) fn read_directory(path: &Path, cx: &App) -> Task<Result<Vec<DirectoryEntry>>> {
+pub(super) fn read_directory(
+    path: &Path,
+    ignore: IgnoreCache,
+    cx: &App,
+) -> Task<Result<Vec<DirectoryEntry>>> {
     let path = path.to_path_buf();
-    cx.background_spawn(async move { list_directory(&path) })
+    cx.background_spawn(async move { list_directory(&path, &ignore) })
 }
 
-fn list_directory(path: &Path) -> Result<Vec<DirectoryEntry>> {
-    let ignore_rules = IgnoreRules::discover(path);
+fn list_directory(path: &Path, ignore: &IgnoreCache) -> Result<Vec<DirectoryEntry>> {
     let mut entries = Vec::new();
     for entry in std::fs::read_dir(path)? {
         let entry = entry?;
@@ -26,12 +29,6 @@ fn list_directory(path: &Path) -> Result<Vec<DirectoryEntry>> {
             continue;
         }
         let entry_path = entry.path();
-        if ignore_rules
-            .as_ref()
-            .is_some_and(|rules| rules.is_ignored(&entry_path))
-        {
-            continue;
-        }
         let is_dir = entry
             .file_type()
             .map(|file_type| file_type.is_dir() || (file_type.is_symlink() && entry_path.is_dir()))
@@ -48,11 +45,11 @@ fn list_directory(path: &Path) -> Result<Vec<DirectoryEntry>> {
             is_dir,
         });
     }
-    entries.sort_by(|left, right| {
-        right
-            .is_dir
-            .cmp(&left.is_dir)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    ignore.with_rules(path, |rules| {
+        if let Some(rules) = rules {
+            entries.retain(|entry| !rules.is_ignored(&entry.path, entry.is_dir));
+        }
     });
+    entries.sort_by_cached_key(|entry| (!entry.is_dir, entry.name.to_lowercase()));
     Ok(entries)
 }

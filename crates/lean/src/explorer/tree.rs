@@ -4,45 +4,9 @@ use gpui_kit::{Context, ScrollStrategy, SharedString, Window};
 
 use super::{Explorer, VisibleEntry};
 use crate::app::actions::{CollapseAllFolders, RefreshExplorer};
-use crate::project::{DirectoryEntry, read_directory};
+use crate::project::DirectoryEntry;
 
 impl Explorer {
-    pub(super) fn load_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.load_directory_and_reveal(path, None, cx);
-    }
-
-    pub(super) fn load_directory_and_reveal(
-        &mut self,
-        path: PathBuf,
-        reveal: Option<PathBuf>,
-        cx: &mut Context<Self>,
-    ) {
-        let task = read_directory(&path, cx);
-        cx.spawn(async move |explorer, cx| {
-            let result = task.await;
-            let update = explorer.update(cx, |explorer, cx| {
-                match result {
-                    Ok(entries) => {
-                        explorer.children.insert(path, entries);
-                    }
-                    Err(error) => {
-                        log::warn!("failed to read {}: {error:#}", path.display());
-                        explorer.expanded.remove(&path);
-                    }
-                }
-                explorer.rebuild_visible();
-                if let Some(reveal) = reveal {
-                    explorer.reveal(reveal);
-                }
-                cx.notify();
-            });
-            if let Err(error) = update {
-                log::debug!("explorer dropped while loading a folder: {error:#}");
-            }
-        })
-        .detach();
-    }
-
     pub(super) fn toggle_folder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if self.expanded.remove(&path) {
             self.rebuild_visible();
@@ -57,9 +21,11 @@ impl Explorer {
         if self.children.contains_key(&path) {
             self.rebuild_visible();
             cx.notify();
-        } else {
-            self.load_directory(path, cx);
+            if self.project.read(cx).watches_folder(&path) {
+                return;
+            }
         }
+        self.load_directory(path, cx);
     }
 
     pub(super) fn toggle_root(&mut self, cx: &mut Context<Self>) {
@@ -69,17 +35,10 @@ impl Explorer {
     }
 
     pub(super) fn refresh(&mut self, _: &RefreshExplorer, _: &mut Window, cx: &mut Context<Self>) {
-        let mut folders: Vec<PathBuf> = self.expanded.iter().cloned().collect();
-        folders.push(self.root.clone());
-        self.children.clear();
-        for folder in folders {
-            self.load_directory(folder, cx);
-        }
-        self.project
-            .update(cx, |project, cx| project.refresh_git(cx));
+        self.project.update(cx, |project, _| project.rescan());
     }
 
-    pub(crate) fn show_recreated_file(&mut self, path: &Path, cx: &mut Context<Self>) {
+    pub(super) fn show_recreated_file(&mut self, path: &Path, cx: &mut Context<Self>) {
         let loaded_folder = path
             .ancestors()
             .skip(1)
@@ -88,8 +47,6 @@ impl Explorer {
         if let Some(folder) = loaded_folder {
             self.load_directory(folder, cx);
         }
-        self.project
-            .update(cx, |project, cx| project.refresh_git(cx));
     }
 
     pub(super) fn collapse_all(
