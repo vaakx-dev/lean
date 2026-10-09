@@ -22,6 +22,7 @@ use crate::{
 
 use super::{
     InputBaseState, InputHighlighter, RangeDecorationStyle, TextDecoration,
+    gutter_markers::{GutterRow, paint_gutter_markers},
     layout::{LastLayout, WhitespaceIndicators},
     mode::LayoutMode,
     syntax_style_cache::SyntaxStyleKey,
@@ -3227,6 +3228,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             );
             window.paint_quad(fill(gutter_bounds, gutter_bg));
 
+            let mut gutter_rows = Vec::with_capacity(line_numbers.len());
             // Each item is the normal lines.
             for (lines, &buffer_line) in line_numbers
                 .iter()
@@ -3236,6 +3238,11 @@ impl<M: InputModeKind> Element for TextElement<M> {
                 let is_active = prepaint.current_row == Some(buffer_line);
 
                 let height = line_height * lines.len() as f32;
+                gutter_rows.push(GutterRow {
+                    buffer_line,
+                    top: p.y,
+                    height,
+                });
                 // paint active line number background
                 if is_active {
                     if let Some(bg_color) = active_line_color {
@@ -3259,6 +3266,13 @@ impl<M: InputModeKind> Element for TextElement<M> {
                     offset_y += prepaint.ghost_lines_height;
                 }
             }
+
+            paint_gutter_markers(
+                self.state.read(cx).extras.gutter_markers(),
+                &gutter_rows,
+                gutter_bounds.origin.x,
+                window,
+            );
         }
 
         // Paint fold icons (only visible on hover or for current line)

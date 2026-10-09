@@ -28,6 +28,8 @@ mod display_map;
 mod editor;
 #[path = "base/element.rs"]
 mod element;
+#[path = "editor/gutter_markers.rs"]
+mod gutter_markers;
 #[path = "editor/highlighting.rs"]
 mod highlighting;
 #[path = "editor/indent.rs"]
@@ -94,6 +96,7 @@ pub use diagnostics::{
 };
 pub use display_map::{BufferPoint, DisplayMap, DisplayPoint, FoldRange, WrappingIndent};
 pub use editor::{Editor, EditorState};
+pub use gutter_markers::GutterMarker;
 pub use highlighting::{
     DiagnosticColors, FoldIconRenderer, HighlightStyleResolver, InputEditorStyle,
     InputHighlightSnapshot, InputHighlighter, InputHighlighterFactory,

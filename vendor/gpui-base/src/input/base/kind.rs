@@ -29,8 +29,8 @@ use ropey::Rope;
 use super::decorations::DecorationCollections;
 use super::lsp::{ContextMenuContent, HoverDefinition, InlineCompletion};
 use crate::input::{
-    HighlightStyleResolver, InputEdit, InputHighlighter, RangeDecoration, SyntaxContext,
-    TextDecoration,
+    GutterMarker, HighlightStyleResolver, InputEdit, InputHighlighter, RangeDecoration,
+    SyntaxContext, TextDecoration,
 };
 use crate::input::{HoverPopoverState, Lsp};
 use gpui::Task;
@@ -120,6 +120,10 @@ pub trait InputExtras: Default + 'static {
     /// What this mode can offer its context menu: go-to-definition, code actions.
     fn context_menu_capabilities(&self) -> (bool, bool) {
         (false, false)
+    }
+
+    fn gutter_markers(&self) -> &[GutterMarker] {
+        &[]
     }
 }
 
@@ -359,6 +363,7 @@ pub struct EditorExtras {
     pub(crate) hover_popover: Option<HoverPopoverState>,
     pub(crate) hover_definition: HoverDefinition,
     pub(crate) context_menu_task: Task<anyhow::Result<()>>,
+    pub(crate) gutter_markers: Vec<GutterMarker>,
 }
 
 impl Default for EditorExtras {
@@ -372,6 +377,7 @@ impl Default for EditorExtras {
             hover_popover: None,
             hover_definition: HoverDefinition::default(),
             context_menu_task: Task::ready(Ok(())),
+            gutter_markers: Vec::new(),
         }
     }
 }

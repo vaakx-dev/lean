@@ -304,4 +304,8 @@ impl crate::input::InputExtras for super::EditorExtras {
             !self.lsp.code_action_providers.is_empty(),
         )
     }
+
+    fn gutter_markers(&self) -> &[super::GutterMarker] {
+        &self.gutter_markers
+    }
 }
