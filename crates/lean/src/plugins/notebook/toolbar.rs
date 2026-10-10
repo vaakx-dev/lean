@@ -97,7 +97,7 @@ impl Notebook {
                 .xsmall()
                 .icon(Icon::empty().path("icons/triangle-alert.svg"))
                 .label("Restart kernel to apply")
-                .tooltip("The Python environment changed since this kernel started")
+                .tooltip("The Python environment or interpreter changed since this kernel started")
                 .text_color(cx.theme().warning)
                 .on_click(cx.listener(|notebook, _, _, cx| notebook.restart_kernel(cx)))
         })

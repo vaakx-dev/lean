@@ -8,11 +8,10 @@ use serde_json::Value;
 
 use super::Notebook;
 use super::document::join_text;
+use super::settings::OUTPUT_MAX_LINES;
 use ansi::strip_ansi;
 use image::ImageOutput;
 use stream::StreamText;
-
-const MAX_TEXT_LINES: usize = 2000;
 
 pub(crate) struct Output {
     pub(crate) json: Value,
@@ -40,7 +39,8 @@ enum OutputContent {
 
 impl Output {
     pub(crate) fn new(json: Value, cx: &mut Context<Notebook>) -> Output {
-        let content = OutputContent::from_json(&json, cx);
+        let max_lines = OUTPUT_MAX_LINES.get(cx).max(1) as usize;
+        let content = OutputContent::from_json(&json, max_lines, cx);
         Output { json, content }
     }
 
@@ -76,15 +76,18 @@ fn append_text(json: &mut Value, chunk: &str) {
 }
 
 impl OutputContent {
-    fn from_json(json: &Value, cx: &mut Context<Notebook>) -> OutputContent {
+    fn from_json(json: &Value, max_lines: usize, cx: &mut Context<Notebook>) -> OutputContent {
         match json.get("output_type").and_then(Value::as_str) {
             Some("stream") => OutputContent::Stream {
-                text: StreamText::new(&json.get("text").map(join_text).unwrap_or_default()),
+                text: StreamText::new(
+                    &json.get("text").map(join_text).unwrap_or_default(),
+                    max_lines,
+                ),
                 stderr: stream_name(json) == Some("stderr"),
             },
-            Some("error") => error_content(json),
+            Some("error") => error_content(json, max_lines),
             Some("execute_result" | "display_data") => match json.get("data") {
-                Some(data) => image_content(data, cx),
+                Some(data) => image_content(data, max_lines, cx),
                 None => OutputContent::Unsupported("Empty output".into()),
             },
             other => OutputContent::Unsupported(
@@ -94,8 +97,8 @@ impl OutputContent {
     }
 }
 
-fn image_content(data: &Value, cx: &mut Context<Notebook>) -> OutputContent {
-    let fallback = data_content(data);
+fn image_content(data: &Value, max_lines: usize, cx: &mut Context<Notebook>) -> OutputContent {
+    let fallback = data_content(data, max_lines);
     match ImageOutput::load(data, cx) {
         Some(image) => OutputContent::Image {
             image,
@@ -105,7 +108,7 @@ fn image_content(data: &Value, cx: &mut Context<Notebook>) -> OutputContent {
     }
 }
 
-fn data_content(data: &Value) -> OutputContent {
+fn data_content(data: &Value, max_lines: usize) -> OutputContent {
     if let Some(html) = data.get("text/html") {
         return OutputContent::Html(join_text(html).into());
     }
@@ -113,7 +116,7 @@ fn data_content(data: &Value) -> OutputContent {
         return OutputContent::Markdown(join_text(markdown).into());
     }
     if let Some(text) = data.get("text/plain") {
-        return OutputContent::Text(limit_lines(&strip_ansi(&join_text(text))));
+        return OutputContent::Text(limit_lines(&strip_ansi(&join_text(text)), max_lines));
     }
     let mimes = data
         .as_object()
@@ -122,7 +125,7 @@ fn data_content(data: &Value) -> OutputContent {
     OutputContent::Unsupported(format!("No renderer for {mimes}").into())
 }
 
-fn error_content(json: &Value) -> OutputContent {
+fn error_content(json: &Value, max_lines: usize) -> OutputContent {
     let name = json.get("ename").and_then(Value::as_str).unwrap_or("Error");
     let value = json.get("evalue").and_then(Value::as_str).unwrap_or("");
     let traceback = json
@@ -139,7 +142,7 @@ fn error_content(json: &Value) -> OutputContent {
         .unwrap_or_default();
     OutputContent::Error {
         title: format!("{name}: {value}").into(),
-        traceback: limit_lines(&traceback),
+        traceback: limit_lines(&traceback, max_lines),
     }
 }
 
@@ -150,17 +153,17 @@ fn stream_name(json: &Value) -> Option<&str> {
     json.get("name").and_then(Value::as_str)
 }
 
-fn limit_lines(text: &str) -> SharedString {
+fn limit_lines(text: &str, max_lines: usize) -> SharedString {
     let text = text.trim_end_matches('\n');
     let line_count = text.lines().count();
-    if line_count <= MAX_TEXT_LINES {
+    if line_count <= max_lines {
         return text.to_string().into();
     }
-    let kept: Vec<&str> = text.lines().take(MAX_TEXT_LINES).collect();
+    let kept: Vec<&str> = text.lines().take(max_lines).collect();
     format!(
         "{}\n… {} more lines",
         kept.join("\n"),
-        line_count - MAX_TEXT_LINES
+        line_count - max_lines
     )
     .into()
 }

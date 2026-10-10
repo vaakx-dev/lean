@@ -1,9 +1,16 @@
+mod compact;
 mod context_menu;
 mod file_operations;
 mod keyboard;
 mod loading;
+mod notices;
+mod options;
 mod panel;
+mod revealing;
 mod rows;
+pub(crate) mod settings;
+mod sorting;
+mod subscriptions;
 mod sync;
 mod tree;
 mod view;
@@ -12,18 +19,20 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use gpui_kit::{
-    App, Context, Entity, EventEmitter, FocusHandle, Focusable, SharedString, Subscription,
-    UniformListScrollHandle, Window,
+    AnyWindowHandle, App, Context, Entity, EventEmitter, FocusHandle, Focusable, SharedString,
+    Subscription, UniformListScrollHandle, Window,
 };
 
-use crate::editor::EditorAreaEvent;
+use crate::editor::EditorArea;
 use crate::plugins::{FileDecorations, PanelEvent, WorkspaceContext};
-use crate::project::{DirectoryEntry, FilesChanged, Project};
+use crate::project::{DirectoryEntry, Project};
 use file_operations::InlineEdit;
 use loading::FolderLoads;
+use options::ExplorerOptions;
 
 pub(crate) use keyboard::bind_keys;
 pub(crate) use panel::PANEL;
+pub(crate) use revealing::reveal_active_file;
 
 struct VisibleEntry {
     path: PathBuf,
@@ -31,22 +40,29 @@ struct VisibleEntry {
     depth: usize,
     is_dir: bool,
     is_draft: bool,
+    is_ignored: bool,
 }
 
 pub(crate) struct Explorer {
     project: Entity<Project>,
+    editor_area: Entity<EditorArea>,
     decorations: Entity<FileDecorations>,
+    window: AnyWindowHandle,
     root: PathBuf,
     focus_handle: FocusHandle,
     scroll_handle: UniformListScrollHandle,
+    options: ExplorerOptions,
     root_expanded: bool,
     expanded: HashSet<PathBuf>,
+    unfolding: HashSet<PathBuf>,
     children: HashMap<PathBuf, Vec<DirectoryEntry>>,
     visible: Vec<VisibleEntry>,
     selected: Option<PathBuf>,
+    pending_reveal: Option<PathBuf>,
+    followed: Option<PathBuf>,
     editing: Option<InlineEdit>,
     loads: FolderLoads,
-    _subscriptions: [Subscription; 3],
+    _subscriptions: Vec<Subscription>,
 }
 
 impl EventEmitter<PanelEvent> for Explorer {}
@@ -54,41 +70,30 @@ impl EventEmitter<PanelEvent> for Explorer {}
 impl Explorer {
     fn new(workspace: &WorkspaceContext, window: &Window, cx: &mut Context<Self>) -> Self {
         let project = workspace.project.clone();
-        let subscriptions = [
-            cx.observe(&workspace.decorations, |_, _, cx| cx.notify()),
-            cx.subscribe_in(
-                &project,
-                window,
-                |explorer, _, event: &FilesChanged, window, cx| {
-                    explorer.apply_fs_changes(&event.0, window, cx)
-                },
-            ),
-            cx.subscribe(
-                &workspace.editor_area,
-                |explorer, _, event: &EditorAreaEvent, cx| {
-                    if let EditorAreaEvent::FileRecreated(path) = event {
-                        explorer.show_recreated_file(path, cx);
-                    }
-                },
-            ),
-        ];
         let root = project.read(cx).root().to_path_buf();
         let mut explorer = Self {
             project,
+            editor_area: workspace.editor_area.clone(),
             decorations: workspace.decorations.clone(),
+            window: window.window_handle(),
             root: root.clone(),
             focus_handle: cx.focus_handle(),
             scroll_handle: UniformListScrollHandle::new(),
+            options: ExplorerOptions::read(cx),
             root_expanded: true,
             expanded: HashSet::new(),
+            unfolding: HashSet::new(),
             children: HashMap::new(),
             visible: Vec::new(),
             selected: None,
+            pending_reveal: None,
+            followed: None,
             editing: None,
             loads: FolderLoads::default(),
-            _subscriptions: subscriptions,
+            _subscriptions: subscriptions::subscribe(workspace, window, cx),
         };
         explorer.load_directory(root, cx);
+        explorer.follow_active_editor(cx);
         explorer
     }
 }

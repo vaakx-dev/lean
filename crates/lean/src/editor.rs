@@ -11,7 +11,9 @@ mod open_file;
 mod opening;
 mod opening_view;
 mod path_changes;
+mod preview_tabs;
 mod saving;
+pub(crate) mod settings;
 mod tabs;
 mod text_file;
 mod watermark;
@@ -25,6 +27,7 @@ use gpui_kit::*;
 use crate::plugins::AnyFileView;
 use crate::toolchain::Toolchains;
 use open_file::OpenFile;
+use preview_tabs::LastOpen;
 use watermark::render_watermark;
 
 pub(crate) use text_file::TEXT_VIEWER;
@@ -42,6 +45,8 @@ pub(crate) struct EditorArea {
     active: Option<usize>,
     toolchains: Entity<Toolchains>,
     focus_handle: FocusHandle,
+    last_open: Option<LastOpen>,
+    _preview_tabs: Subscription,
 }
 
 impl EventEmitter<EditorAreaEvent> for EditorArea {}
@@ -53,6 +58,8 @@ impl EditorArea {
             active: None,
             toolchains,
             focus_handle: cx.focus_handle(),
+            last_open: None,
+            _preview_tabs: Self::observe_preview_tabs(cx),
         }
     }
 
@@ -72,7 +79,7 @@ impl EditorArea {
     pub(crate) fn unsaved_file_names(&self) -> Vec<SharedString> {
         self.files
             .iter()
-            .filter(|file| file.dirty)
+            .filter(|file| file.dirty && !file.disk.kept_on_exit)
             .map(|file| file.name.clone())
             .collect()
     }
@@ -106,6 +113,12 @@ impl EditorArea {
         window.focus(&focus_handle, cx);
     }
 
+    pub(crate) fn active_path(&self) -> Option<&Path> {
+        self.active_file()
+            .filter(|file| file.is_file())
+            .map(|file| file.path.as_path())
+    }
+
     fn active_file(&self) -> Option<&OpenFile> {
         self.files.get(self.active?)
     }
@@ -134,7 +147,7 @@ impl Focusable for EditorArea {
 }
 
 impl Render for EditorArea {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let area = v_flex()
             .id("editor-area")
             .track_focus(&self.focus_handle)
@@ -143,7 +156,7 @@ impl Render for EditorArea {
             Some(file) => area
                 .child(self.render_tab_bar(cx))
                 .child(div().flex_1().min_h_0().child(file.view.view())),
-            None => area.child(render_watermark(cx)),
+            None => area.child(render_watermark(window, cx)),
         }
     }
 }

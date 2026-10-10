@@ -7,16 +7,17 @@ use gpui_kit::component::input::{
 use gpui_kit::*;
 
 use super::super::geometry::MAX_COLUMNS;
+use super::super::style::MinimapStyle;
 use super::style_cursor::StyleCursor;
 use super::{Rows, RowsBuilder};
 
 const MAX_LINE_BYTES: usize = 10_000;
-const TAB_COLUMNS: usize = 4;
 
 pub(in super::super) struct RowsJob {
     ranges: Vec<Range<usize>>,
     source: Source,
     foreground: Hsla,
+    tab_columns: usize,
 }
 
 enum Source {
@@ -48,8 +49,10 @@ impl RowsJob {
         editor: &EditorState,
         ranges: Vec<Range<usize>>,
         foreground: Hsla,
+        style: &MinimapStyle,
     ) -> Self {
-        let source = match editor.highlight_snapshot() {
+        let snapshot = editor.highlight_snapshot().filter(|_| style.syntax_colors);
+        let source = match snapshot {
             Some(snapshot) => Source::Highlighted {
                 snapshot,
                 resolver: editor.highlight_style_resolver(),
@@ -60,6 +63,7 @@ impl RowsJob {
             ranges,
             source,
             foreground,
+            tab_columns: style.tab_columns.max(1),
         }
     }
 
@@ -80,12 +84,7 @@ impl RowsJob {
                 .find(|&line| text.line_len(line) > MAX_LINE_BYTES)
                 .unwrap_or(end);
             if run_end == line {
-                push_line(
-                    text,
-                    line,
-                    &mut StyleCursor::new(&[], self.foreground),
-                    &mut rows,
-                );
+                self.push_line(line, &mut StyleCursor::new(&[], self.foreground), &mut rows);
                 line += 1;
                 continue;
             }
@@ -93,30 +92,32 @@ impl RowsJob {
             let styles = self.source.styles(range);
             let mut colors = StyleCursor::new(&styles, self.foreground);
             for line in line..run_end {
-                push_line(text, line, &mut colors, &mut rows);
+                self.push_line(line, &mut colors, &mut rows);
             }
             line = run_end;
         }
         rows.finish()
     }
-}
 
-fn push_line(text: &Rope, line: usize, colors: &mut StyleCursor<'_>, rows: &mut RowsBuilder) {
-    let mut offset = text.line_start_offset(line);
-    let mut column = 0;
-    for character in text.slice_line(line).chars() {
-        if column >= MAX_COLUMNS {
-            break;
+    fn push_line(&self, line: usize, colors: &mut StyleCursor<'_>, rows: &mut RowsBuilder) {
+        let text = self.source.text();
+        let tab = self.tab_columns;
+        let mut offset = text.line_start_offset(line);
+        let mut column = 0;
+        for character in text.slice_line(line).chars() {
+            if column >= MAX_COLUMNS {
+                break;
+            }
+            if character == '\t' {
+                column += tab - column % tab;
+            } else if character.is_whitespace() {
+                column += 1;
+            } else {
+                rows.push(column, colors.color_at(offset));
+                column += 1;
+            }
+            offset += character.len_utf8();
         }
-        if character == '\t' {
-            column += TAB_COLUMNS - column % TAB_COLUMNS;
-        } else if character.is_whitespace() {
-            column += 1;
-        } else {
-            rows.push(column, colors.color_at(offset));
-            column += 1;
-        }
-        offset += character.len_utf8();
+        rows.end_row();
     }
-    rows.end_row();
 }

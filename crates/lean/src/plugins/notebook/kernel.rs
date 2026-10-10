@@ -5,6 +5,7 @@ mod stderr;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::Result;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
@@ -12,9 +13,23 @@ use jupyter_protocol::{ExecuteRequest, JupyterMessage};
 use serde_json::Value;
 use tokio::task::JoinHandle;
 
+#[cfg(windows)]
+const DEFAULT_PYTHON: &str = "python";
+#[cfg(not(windows))]
+const DEFAULT_PYTHON: &str = "python3";
+
 pub(super) struct KernelSpec {
     pub(super) folder: PathBuf,
     pub(super) environment: HashMap<String, String>,
+    pub(super) program: String,
+    pub(super) startup_timeout: Duration,
+}
+
+pub(super) fn kernel_program(interpreter: &str) -> String {
+    match interpreter.trim() {
+        "" => DEFAULT_PYTHON.to_string(),
+        program => program.to_string(),
+    }
 }
 
 pub(super) enum KernelEvent {

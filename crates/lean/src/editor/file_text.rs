@@ -4,36 +4,69 @@ use anyhow::{Result, anyhow};
 use gpui_kit::component::Rope;
 use ropey::extra::esoterica::ropes_are_instances;
 
-const COMPARE_LIMIT: usize = 8 * 1024 * 1024;
+use crate::files::settings::LineEndings;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LineEnding {
-    Lf,
-    Crlf,
+pub(crate) struct LineEnding {
+    crlf: bool,
+    mixed: bool,
 }
 
 impl LineEnding {
+    const LF: Self = Self {
+        crlf: false,
+        mixed: false,
+    };
+    const CRLF: Self = Self {
+        crlf: true,
+        mixed: false,
+    };
+
     fn detect(text: &str) -> Self {
-        match text.find('\n') {
-            Some(index) if text[..index].ends_with('\r') => Self::Crlf,
-            _ => Self::Lf,
+        let (mut lf, mut crlf) = (0usize, 0usize);
+        for (index, _) in text.match_indices('\n') {
+            if text.as_bytes()[..index].last() == Some(&b'\r') {
+                crlf += 1;
+            } else {
+                lf += 1;
+            }
+        }
+        Self {
+            crlf: crlf > lf,
+            mixed: crlf > 0 && lf > 0,
         }
     }
 
     pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Lf => "LF",
-            Self::Crlf => "CRLF",
+        match (self.crlf, self.mixed) {
+            (false, false) => "LF",
+            (true, false) => "CRLF",
+            (false, true) => "Mixed (LF)",
+            (true, true) => "Mixed (CRLF)",
+        }
+    }
+
+    pub(crate) fn for_save(self, policy: LineEndings) -> Self {
+        match policy {
+            LineEndings::Preserve => Self {
+                mixed: false,
+                ..self
+            },
+            LineEndings::Lf => Self::LF,
+            LineEndings::Crlf => Self::CRLF,
         }
     }
 
     pub(crate) fn encode(self, text: String) -> Vec<u8> {
-        match self {
-            Self::Lf => text.into_bytes(),
-            Self::Crlf => text
-                .replace("\r\n", "\n")
-                .replace('\n', "\r\n")
-                .into_bytes(),
+        let text = if text.contains("\r\n") {
+            text.replace("\r\n", "\n")
+        } else {
+            text
+        };
+        if self.crlf {
+            text.replace('\n', "\r\n").into_bytes()
+        } else {
+            text.into_bytes()
         }
     }
 }
@@ -44,9 +77,11 @@ pub(crate) fn decode_text(bytes: Vec<u8>) -> Result<(String, LineEnding)> {
 }
 
 pub(super) fn normalize_line_endings(text: String) -> (String, LineEnding) {
-    match LineEnding::detect(&text) {
-        LineEnding::Lf => (text, LineEnding::Lf),
-        LineEnding::Crlf => (text.replace("\r\n", "\n"), LineEnding::Crlf),
+    let ending = LineEnding::detect(&text);
+    if ending.crlf || ending.mixed {
+        (text.replace("\r\n", "\n"), ending)
+    } else {
+        (text, ending)
     }
 }
 
@@ -57,6 +92,5 @@ pub(super) fn content_hash(bytes: &[u8]) -> u64 {
 }
 
 pub(super) fn same_text(text: &Rope, saved: &Rope) -> bool {
-    ropes_are_instances(text, saved)
-        || (text.len() == saved.len() && text.len() <= COMPARE_LIMIT && text == saved)
+    ropes_are_instances(text, saved) || (text.len() == saved.len() && text == saved)
 }

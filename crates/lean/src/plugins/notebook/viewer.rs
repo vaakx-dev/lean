@@ -7,6 +7,7 @@ use gpui_kit::*;
 use super::document::Document;
 use super::{KernelStatus, Notebook};
 use crate::editor::file_text::decode_text;
+use crate::files::settings::LINE_ENDINGS;
 use crate::plugins::{AnyFileView, FileView, FileViewer, OpenRequest, Snapshot};
 use crate::workspace::status_item;
 
@@ -56,12 +57,21 @@ impl FileView for Notebook {
         Ok(())
     }
 
+    fn differs_from_saved(&self, cx: &App) -> bool {
+        self.has_unsaved_changes(cx)
+    }
+
     fn snapshot(&mut self, cx: &mut Context<Self>) -> Option<Result<Snapshot>> {
-        let line_ending = self.line_ending;
-        Some(
-            self.content(cx)
-                .map(|content| Snapshot::new(move || line_ending.encode(content))),
-        )
+        let line_ending = self.line_ending.for_save(LINE_ENDINGS.get(cx));
+        let saved = self.saved_cells(cx);
+        let notebook = cx.weak_entity();
+        Some(self.content(cx).map(|content| {
+            Snapshot::new(move || line_ending.encode(content)).on_saved(move |cx| {
+                if let Err(error) = notebook.update(cx, |notebook, _| notebook.saved = saved) {
+                    log::debug!("notebook dropped after saving: {error:#}");
+                }
+            })
+        }))
     }
 
     fn set_path(&mut self, path: &Path, _: &mut Context<Self>) {
@@ -85,10 +95,8 @@ impl FileView for Notebook {
 
     fn running_work(&self, _: &App) -> Option<&'static str> {
         match self.kernel_status() {
-            KernelStatus::Stopped | KernelStatus::Failed(_) => None,
-            KernelStatus::Starting | KernelStatus::Idle | KernelStatus::Busy => {
-                Some("running kernel")
-            }
+            KernelStatus::Starting | KernelStatus::Busy => Some("running kernel"),
+            KernelStatus::Stopped | KernelStatus::Idle | KernelStatus::Failed(_) => None,
         }
     }
 }

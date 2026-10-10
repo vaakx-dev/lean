@@ -1,19 +1,23 @@
 use gpui_kit::*;
 
 use super::ImageViewer;
+use crate::app::keymap;
 
 actions!(image_viewer, [ZoomIn, ZoomOut, ZoomToFit, ActualSize]);
 
 pub(super) const KEY_CONTEXT: &str = "ImageViewer";
 
 pub(crate) fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("secondary-=", ZoomIn, Some(KEY_CONTEXT)),
-        KeyBinding::new("secondary-+", ZoomIn, Some(KEY_CONTEXT)),
-        KeyBinding::new("secondary--", ZoomOut, Some(KEY_CONTEXT)),
-        KeyBinding::new("secondary-0", ZoomToFit, Some(KEY_CONTEXT)),
-        KeyBinding::new("secondary-1", ActualSize, Some(KEY_CONTEXT)),
-    ]);
+    keymap::bind_defaults(
+        cx,
+        [
+            KeyBinding::new("secondary-=", ZoomIn, Some(KEY_CONTEXT)),
+            KeyBinding::new("secondary-+", ZoomIn, Some(KEY_CONTEXT)),
+            KeyBinding::new("secondary--", ZoomOut, Some(KEY_CONTEXT)),
+            KeyBinding::new("secondary-0", ZoomToFit, Some(KEY_CONTEXT)),
+            KeyBinding::new("secondary-1", ActualSize, Some(KEY_CONTEXT)),
+        ],
+    );
 }
 
 pub(super) fn bind_actions(element: Stateful<Div>, cx: &Context<ImageViewer>) -> Stateful<Div> {

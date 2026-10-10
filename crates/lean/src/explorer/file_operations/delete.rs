@@ -4,6 +4,8 @@ use gpui_kit::{AppContext as _, Context, PromptLevel, SharedString, Window};
 
 use super::DeleteSelected;
 use crate::explorer::Explorer;
+use crate::explorer::settings::{CONFIRM_DELETE, DELETE_TO, DeleteTo};
+use crate::files::file_name;
 use crate::plugins::PanelEvent;
 
 const MOVE_TO_TRASH_ANSWER: usize = 0;
@@ -24,8 +26,30 @@ impl Explorer {
             return;
         };
         let path = entry.path.clone();
-        let name = entry.name.clone();
-        let (message, detail) = delete_question(&name, entry.is_dir);
+        let is_dir = entry.is_dir;
+        let name = file_name(&path);
+        let permanently = DELETE_TO.get(cx) == DeleteTo::Permanent;
+        match (CONFIRM_DELETE.get(cx), permanently) {
+            (false, false) => self.move_to_trash(path, name, window, cx),
+            (false, true) => self.delete_permanently(path, name, window, cx),
+            (true, false) => self.confirm_move_to_trash(path, name, is_dir, window, cx),
+            (true, true) => {
+                let question = permanent_delete_question(&name, is_dir);
+                let detail = "This can't be undone.".to_string();
+                self.confirm_permanent_delete(path, name, question, detail, window, cx);
+            }
+        }
+    }
+
+    fn confirm_move_to_trash(
+        &mut self,
+        path: PathBuf,
+        name: SharedString,
+        is_dir: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (message, detail) = delete_question(&name, is_dir);
         let move_to_trash = format!("Move to {TRASH_NAME}");
         let answer = window.prompt(
             PromptLevel::Warning,
@@ -66,7 +90,10 @@ impl Explorer {
                 Err(error) => {
                     log::warn!("failed to move {} to the trash: {error}", path.display());
                     let reason = format!("Can't move \"{name}\" to the {TRASH_NAME}: {error}");
-                    explorer.offer_permanent_delete(path, name, reason, window, cx);
+                    let question = format!(
+                        "Do you want to permanently delete \"{name}\"? This can't be undone."
+                    );
+                    explorer.confirm_permanent_delete(path, name, reason, question, window, cx);
                 }
             });
             if let Err(error) = update {
@@ -115,5 +142,13 @@ fn delete_question(name: &str, is_dir: bool) -> (String, String) {
             format!("Are you sure you want to delete \"{name}\"?"),
             format!("You can restore this file from the {TRASH_NAME}."),
         )
+    }
+}
+
+fn permanent_delete_question(name: &str, is_dir: bool) -> String {
+    if is_dir {
+        format!("Are you sure you want to permanently delete \"{name}\" and its contents?")
+    } else {
+        format!("Are you sure you want to permanently delete \"{name}\"?")
     }
 }

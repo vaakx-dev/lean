@@ -16,11 +16,12 @@ pub(super) fn read_statuses(
     repository: &git2::Repository,
     workdir: &Path,
     scope: Option<&Path>,
+    include_untracked: bool,
 ) -> Result<Statuses> {
     let mut options = git2::StatusOptions::new();
     options
-        .include_untracked(true)
-        .recurse_untracked_dirs(true)
+        .include_untracked(include_untracked)
+        .recurse_untracked_dirs(include_untracked)
         .include_ignored(false)
         .renames_head_to_index(true);
     if let Some(scope) = scope {

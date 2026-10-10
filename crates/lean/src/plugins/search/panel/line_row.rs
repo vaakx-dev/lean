@@ -6,7 +6,8 @@ use super::SearchPanel;
 use super::rows::clickable_row;
 use crate::plugins::PanelEvent;
 
-const LINE_INDENT: Pixels = px(42.);
+const LINE_INDENT: Pixels = px(20.);
+const LINE_NUMBER_WIDTH: Pixels = px(22.);
 
 impl SearchPanel {
     pub(super) fn render_line_row(
@@ -31,6 +32,15 @@ impl SearchPanel {
         let row = clickable_row(index, theme)
             .pl(LINE_INDENT)
             .when(active, |row| row.bg(theme.list_active))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .min_w(LINE_NUMBER_WIDTH)
+                    .text_right()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child((line.line + 1).to_string()),
+            )
             .child(
                 div()
                     .flex_1()

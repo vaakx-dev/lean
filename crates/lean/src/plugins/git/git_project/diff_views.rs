@@ -19,6 +19,12 @@ impl GitProject {
             return;
         };
         let key = PathBuf::from(format!("git-diff:{}:{}", base.key(), path.display()));
+        if self
+            .editor_area
+            .update(cx, |area, cx| area.show_view(&key, window, cx))
+        {
+            return;
+        }
         let view = DiffView::open(workdir, path, base, window, cx);
         let title = view.read(cx).title();
         self.diff_views.retain(|view| view.upgrade().is_some());

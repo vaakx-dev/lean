@@ -14,4 +14,4 @@ pub(crate) use history::{CommitHistory, CommitSummary};
 pub(crate) use metadata::metadata_watch;
 pub(crate) use read_error::GitReadError;
 pub(crate) use staging::{discard, stage, unstage};
-pub(crate) use state::GitState;
+pub(crate) use state::{GitState, ReadOptions};

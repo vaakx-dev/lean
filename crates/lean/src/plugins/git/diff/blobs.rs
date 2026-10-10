@@ -53,6 +53,13 @@ pub(super) fn read_index(file: &RepoFile) -> Result<Content> {
     )?))
 }
 
+pub(super) fn is_in_index(file: &RepoFile) -> Result<bool> {
+    let index = file.repository.index()?;
+    Ok(index
+        .get_path(&file.relative_path, 0)
+        .is_some_and(|entry| entry.mode != GITLINK_MODE))
+}
+
 fn blob_content(blob: Option<git2::Blob<'_>>) -> Content {
     match blob {
         Some(blob) if blob.is_binary() => Content::Binary,

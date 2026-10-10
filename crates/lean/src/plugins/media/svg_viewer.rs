@@ -13,10 +13,13 @@ use gpui_kit::component::Rope;
 use gpui_kit::*;
 
 use super::formats::is_svg;
+use super::settings::SVG_DEFAULT_MODE;
 use crate::editor::TEXT_VIEWER;
+use crate::files::settings::SaveFormat;
 use crate::plugins::{
     AnyFileView, FileView, FileViewEvent, FileViewer, GutterMarker, OpenRequest, Snapshot,
 };
+use crate::settings::Settings;
 use mode::Mode;
 use preview::SvgPreview;
 
@@ -38,11 +41,13 @@ fn open(request: OpenRequest, window: &mut Window, cx: &mut App) -> Result<AnyFi
 pub(super) struct SvgViewer {
     code: AnyFileView,
     preview: SvgPreview,
+    preview_stale: bool,
     mode: Mode,
     focus_handle: FocusHandle,
     _refresh: Task<()>,
     _code_events: Subscription,
     _release: Subscription,
+    _settings: Subscription,
 }
 
 impl EventEmitter<FileViewEvent> for SvgViewer {}
@@ -61,30 +66,42 @@ impl SvgViewer {
             }),
         );
         let release = cx.on_release(|viewer, cx| viewer.preview.release(cx));
+        let settings = cx.observe_global::<Settings>(|_, cx| cx.notify());
         let mut viewer = Self {
             code,
             preview: SvgPreview::default(),
-            mode: Mode::Split,
+            preview_stale: true,
+            mode: Mode::from(SVG_DEFAULT_MODE.get(cx)),
             focus_handle: cx.focus_handle(),
             _refresh: Task::ready(()),
             _code_events: code_events,
             _release: release,
+            _settings: settings,
         };
-        viewer.schedule_refresh(Duration::ZERO, cx);
+        viewer.refresh_if_visible(Duration::ZERO, cx);
         viewer
     }
 
     fn handle_code_event(&mut self, edited: bool, cx: &mut Context<Self>) {
         if edited {
             cx.emit(FileViewEvent::Edited);
-            self.schedule_refresh(REFRESH_DELAY, cx);
+            self.preview_stale = true;
+            self.refresh_if_visible(REFRESH_DELAY, cx);
         } else {
             cx.emit(FileViewEvent::StatusChanged);
         }
     }
 
+    fn refresh_if_visible(&mut self, delay: Duration, cx: &mut Context<Self>) {
+        if self.preview_stale && self.mode.shows_preview() {
+            self.preview_stale = false;
+            self.schedule_refresh(delay, cx);
+        }
+    }
+
     fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
         self.mode = mode;
+        self.refresh_if_visible(Duration::ZERO, cx);
         let focus_handle = self.focus_handle(cx);
         window.focus(&focus_handle, cx);
         cx.notify();
@@ -107,6 +124,18 @@ impl FileView for SvgViewer {
 
     fn snapshot(&mut self, cx: &mut Context<Self>) -> Option<Result<Snapshot>> {
         self.code.snapshot(cx)
+    }
+
+    fn prepare_save(&mut self, format: &SaveFormat, window: &mut Window, cx: &mut Context<Self>) {
+        self.code.prepare_save(format, window, cx);
+    }
+
+    fn unsaved_text(&self, cx: &App) -> Option<Rope> {
+        self.code.unsaved_text(cx)
+    }
+
+    fn restore_unsaved(&mut self, text: Rope, window: &mut Window, cx: &mut Context<Self>) {
+        self.code.restore_unsaved(text, window, cx);
     }
 
     fn set_path(&mut self, path: &Path, cx: &mut Context<Self>) {

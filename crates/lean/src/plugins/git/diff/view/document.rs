@@ -5,8 +5,6 @@ use super::super::blobs::Content;
 use super::super::hunks::{diff_options, line_text};
 use super::side::Side;
 
-const CONTEXT_LINES: u32 = 3;
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum RowKind {
     Context,
@@ -39,7 +37,12 @@ struct DiffRows {
 }
 
 impl DiffDocument {
-    pub(super) fn build(old: Content, new: Content, language: &str) -> Result<Self> {
+    pub(super) fn build(
+        old: Content,
+        new: Content,
+        language: &str,
+        context_lines: u32,
+    ) -> Result<Self> {
         let (Some(old_text), Some(new_text)) = (old.into_text(), new.into_text()) else {
             return Ok(Self::with_notice("Binary files can't be shown as a diff."));
         };
@@ -47,7 +50,7 @@ impl DiffDocument {
             rows,
             added,
             removed,
-        } = diff_rows(&old_text, &new_text)?;
+        } = diff_rows(&old_text, &new_text, context_lines)?;
         let notice = rows.is_empty().then_some("No changes.");
         Ok(Self {
             rows,
@@ -79,8 +82,8 @@ impl DiffDocument {
     }
 }
 
-fn diff_rows(old: &str, new: &str) -> Result<DiffRows> {
-    let mut options = diff_options(CONTEXT_LINES);
+fn diff_rows(old: &str, new: &str, context_lines: u32) -> Result<DiffRows> {
+    let mut options = diff_options(context_lines);
     let patch = git2::Patch::from_buffers(
         old.as_bytes(),
         None,

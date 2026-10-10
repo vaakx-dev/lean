@@ -1,5 +1,6 @@
 mod metadata_targets;
 mod open_file_folders;
+mod recover;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher as _};
 
 use super::classify::classify;
 use super::filter::{EventFilter, RawEvent};
-use super::health::Health;
+use super::health::{Health, WatchFailure};
 use super::metadata::SharedMetadata;
 use super::shared_paths::SharedPaths;
 use super::skipped::SkippedFolders;
@@ -27,6 +28,7 @@ pub(super) struct WatchedTree {
     open_file_folders: HashSet<PathBuf>,
     metadata: SharedMetadata,
     metadata_targets: Vec<(PathBuf, RecursiveMode)>,
+    route: Option<(EventFilter, UnboundedSender<RawEvent>)>,
     watcher: Option<RecommendedWatcher>,
 }
 
@@ -48,6 +50,7 @@ impl WatchedTree {
             open_file_folders: HashSet::new(),
             metadata,
             metadata_targets: Vec::new(),
+            route: None,
             watcher: None,
         }
     }
@@ -61,23 +64,9 @@ impl WatchedTree {
     }
 
     pub(super) fn start(mut self, filter: EventFilter, sender: UnboundedSender<RawEvent>) -> Self {
-        let health = self.health.clone();
-        let handler = move |event: notify::Result<notify::Event>| match event {
-            Ok(event) => {
-                if let Some(raw) = filter.filter(event) {
-                    sender.unbounded_send(raw).ok();
-                }
-            }
-            Err(error) => health.report(&error),
-        };
-        let config = Config::default().with_follow_symlinks(false);
-        match RecommendedWatcher::new(handler, config) {
-            Ok(watcher) => self.watcher = Some(watcher),
-            Err(error) => {
-                log::warn!("failed to start the file watcher: {error}");
-                self.health.fail();
-                return self;
-            }
+        self.route = Some((filter, sender));
+        if !self.create_watcher() {
+            return self;
         }
         let root = self.root.clone();
         if WATCH_EACH_FOLDER {
@@ -88,6 +77,38 @@ impl WatchedTree {
         self.watch_metadata_targets();
         self.watch_open_file_folders();
         self
+    }
+
+    fn create_watcher(&mut self) -> bool {
+        let Some((filter, sender)) = self.route.clone() else {
+            return false;
+        };
+        let health = self.health.clone();
+        let handler = move |event: notify::Result<notify::Event>| match event {
+            Ok(event) => {
+                if let Some(raw) = filter.filter(event) {
+                    sender.unbounded_send(raw).ok();
+                }
+            }
+            Err(error) => {
+                health.report(&error);
+                if !health.is_ok() {
+                    sender.unbounded_send(RawEvent::empty()).ok();
+                }
+            }
+        };
+        let config = Config::default().with_follow_symlinks(false);
+        match RecommendedWatcher::new(handler, config) {
+            Ok(watcher) => {
+                self.watcher = Some(watcher);
+                true
+            }
+            Err(error) => {
+                log::warn!("failed to start the file watcher: {error}");
+                self.health.fail(WatchFailure::of(&error));
+                false
+            }
+        }
     }
 
     pub(super) fn classify(&mut self, events: Vec<RawEvent>) -> Option<FsChanges> {

@@ -2,6 +2,7 @@ use gpui_kit::component::input::EditorState;
 use gpui_kit::*;
 
 use super::super::rows::{Rows, RowsJob};
+use super::super::style::MinimapStyle;
 use super::chunk_lines;
 
 pub(in super::super) struct ChunkJob {
@@ -21,12 +22,13 @@ impl ChunkJob {
         indices: Vec<usize>,
         version: u64,
         foreground: Hsla,
+        style: &MinimapStyle,
     ) -> Self {
         let ranges = indices.iter().map(|&index| chunk_lines(index)).collect();
         Self {
             version,
             indices,
-            rows: RowsJob::new(editor, ranges, foreground),
+            rows: RowsJob::new(editor, ranges, foreground, style),
         }
     }
 

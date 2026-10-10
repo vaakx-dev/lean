@@ -23,6 +23,7 @@ pub(crate) struct Palette {
     foreground: Hsla,
     background: Hsla,
     cursor: Hsla,
+    selection: Hsla,
 }
 
 impl Palette {
@@ -49,6 +50,7 @@ impl Palette {
             foreground: theme.foreground,
             background: theme.sidebar,
             cursor: theme.caret,
+            selection: theme.selection,
         }
     }
 
@@ -58,6 +60,10 @@ impl Palette {
 
     pub(crate) fn cursor(&self) -> Hsla {
         self.cursor
+    }
+
+    pub(crate) fn selection(&self) -> Hsla {
+        self.selection
     }
 
     pub(crate) fn resolve(&self, color: Color, overrides: &Colors) -> Hsla {

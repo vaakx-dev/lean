@@ -1,6 +1,7 @@
 mod commit_row;
 mod graph;
 mod graph_paint;
+mod load_more_row;
 mod relative_time;
 
 use std::rc::Rc;

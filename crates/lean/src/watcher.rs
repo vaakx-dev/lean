@@ -1,9 +1,11 @@
 mod classify;
 mod coverage;
+mod debounce;
 mod disk_entry;
 mod filter;
 mod health;
 mod metadata;
+mod recovery;
 mod shared_paths;
 mod skipped;
 mod tree;
@@ -11,25 +13,27 @@ mod walk;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use gpui_kit::{AppContext as _, AsyncApp, Context, Task, WeakEntity};
+use gpui_kit::{AppContext as _, AsyncApp, Context, SharedString, Task, WeakEntity};
 
 use crate::project::{IgnoreCache, Project};
 use coverage::covers;
+use debounce::debounce;
 use filter::{EventFilter, RawEvent};
 use health::Health;
 use metadata::SharedMetadata;
+use recovery::Recovery;
 use shared_paths::SharedPaths;
 use skipped::SkippedFolders;
 use tree::WatchedTree;
 
+pub(crate) use debounce::DEBOUNCE_MS;
 pub(crate) use disk_entry::DiskEntry;
 pub(crate) use metadata::MetadataWatch;
 
-const DEBOUNCE: Duration = Duration::from_millis(150);
 const WATCH_EACH_FOLDER: bool = cfg!(any(target_os = "linux", target_os = "android"));
 
 #[derive(Default)]
@@ -112,6 +116,11 @@ impl FsWatcher {
             open_files: open_files.clone(),
         };
         let event_sender = sender.clone();
+        let watch = Watch {
+            health: health.clone(),
+            requests: sender.clone(),
+            project: cx.weak_entity(),
+        };
         let task = cx.spawn(async move |project, cx| {
             let tree = cx
                 .background_spawn(async move { tree.start(filter, event_sender) })
@@ -121,7 +130,7 @@ impl FsWatcher {
             if reconcile.is_err() {
                 return;
             }
-            forward_changes(receiver, tree, project, cx).await;
+            forward_changes(receiver, tree, watch, cx).await;
         });
         Self {
             metadata,
@@ -161,30 +170,60 @@ impl FsWatcher {
     }
 }
 
+struct Watch {
+    health: Health,
+    requests: UnboundedSender<RawEvent>,
+    project: WeakEntity<Project>,
+}
+
+impl Watch {
+    fn report_health(&self, recovery: &mut Recovery, cx: &mut AsyncApp) -> bool {
+        let Some(failure) = recovery.check(&self.health, &self.requests, cx) else {
+            return true;
+        };
+        let message = SharedString::from(failure.message());
+        self.project
+            .update(cx, |project, cx| project.report_watch_failure(message, cx))
+            .is_ok()
+    }
+}
+
 async fn forward_changes(
     mut receiver: UnboundedReceiver<RawEvent>,
     mut tree: WatchedTree,
-    project: WeakEntity<Project>,
+    watch: Watch,
     cx: &mut AsyncApp,
 ) {
+    let mut recovery = Recovery::default();
+    if !watch.report_health(&mut recovery, cx) {
+        return;
+    }
     while let Some(first) = receiver.next().await {
-        cx.background_executor().timer(DEBOUNCE).await;
+        let delay = cx.update(|cx| debounce(cx));
+        cx.background_executor().timer(delay).await;
         let mut events = vec![first];
         while let Ok(event) = receiver.try_recv() {
             events.push(event);
         }
+        if events.iter().any(|event| event.retry) {
+            recovery.retry_started();
+        }
         let (returned, changes) = cx
             .background_spawn(async move {
-                let changes = tree.classify(events);
+                let changes = tree.process(events);
                 (tree, changes)
             })
             .await;
         tree = returned;
-        let Some(changes) = changes else {
-            continue;
-        };
-        let update = project.update(cx, |project, cx| project.apply_fs_changes(changes, cx));
-        if update.is_err() {
+        if let Some(changes) = changes {
+            let update = watch
+                .project
+                .update(cx, |project, cx| project.apply_fs_changes(changes, cx));
+            if update.is_err() {
+                break;
+            }
+        }
+        if !watch.report_health(&mut recovery, cx) {
             break;
         }
     }

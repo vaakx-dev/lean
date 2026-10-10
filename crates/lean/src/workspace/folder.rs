@@ -24,6 +24,10 @@ impl ProjectViews {
         let toolchains = cx.new(|cx| Toolchains::new(root.clone(), cx));
         let project = cx.new(|cx| Project::new(root, cx));
         let editor_area = cx.new(|cx| EditorArea::new(toolchains.clone(), cx));
+        let project_root = project.read(cx).root().to_path_buf();
+        let saving_services = editor_area.update(cx, |area, cx| {
+            area.start_saving_services(&project_root, window, cx)
+        });
         let decorations = cx.new(|_| FileDecorations::default());
         let context = WorkspaceContext::new(
             project.clone(),
@@ -56,11 +60,18 @@ impl ProjectViews {
             cx.subscribe(
                 &editor_area,
                 |workspace, _, event: &EditorAreaEvent, cx| match event {
-                    EditorAreaEvent::ActiveEditorChanged => cx.notify(),
-                    EditorAreaEvent::OpenFilesChanged => workspace.watch_open_files(cx),
+                    EditorAreaEvent::ActiveEditorChanged => {
+                        workspace.record_session(cx);
+                        cx.notify();
+                    }
+                    EditorAreaEvent::OpenFilesChanged => {
+                        workspace.watch_open_files(cx);
+                        workspace.record_session(cx);
+                    }
                     _ => {}
                 },
             ),
+            saving_services,
         ];
         Self {
             context,
@@ -88,11 +99,12 @@ impl Workspace {
         self.status_items = views.status_items;
         self._project_subscriptions = views.subscriptions;
         self.reset_terminal(window, cx);
-        self.active_panel = 0;
+        self.active_panel = self.default_panel_index(cx);
         self.sidebar_visible = true;
         self.focus_sidebar(window, cx);
         self.update_title(window, cx);
         self.remember_project(cx);
+        self.reopen_files(None, window, cx);
         cx.notify();
     }
 
@@ -106,5 +118,6 @@ impl Workspace {
         self.context
             .project
             .update(cx, |project, cx| project.refresh_after_activation(cx));
+        self.refresh_toolchains_after_activation(cx);
     }
 }

@@ -19,12 +19,24 @@ pub(crate) struct GitState {
     pub(crate) unstaged: HashMap<PathBuf, FileStatus>,
     pub(crate) changed_folders: HashSet<PathBuf>,
     pub(crate) history: Arc<[CommitSummary]>,
+    pub(crate) has_more_history: bool,
     pub(crate) git_dirs: Vec<PathBuf>,
     history_head: Option<git2::Oid>,
+    history_limit: usize,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ReadOptions {
+    pub(crate) include_untracked: bool,
+    pub(crate) history_limit: usize,
 }
 
 impl GitState {
-    pub(crate) fn read(root: &Path, previous: Option<CommitHistory>) -> Result<Option<Self>> {
+    pub(crate) fn read(
+        root: &Path,
+        previous: Option<CommitHistory>,
+        options: ReadOptions,
+    ) -> Result<Option<Self>> {
         let repository = match git2::Repository::discover(root) {
             Ok(repository) => repository,
             Err(error) if error.code() == git2::ErrorCode::NotFound => return Ok(None),
@@ -35,12 +47,18 @@ impl GitState {
         };
         let branch = branch_name(&repository)?;
         let scope = project_scope(root, &workdir);
-        let statuses = read_statuses(&repository, &workdir, scope.as_deref())?;
+        let statuses = read_statuses(
+            &repository,
+            &workdir,
+            scope.as_deref(),
+            options.include_untracked,
+        )?;
         let changed_folders = changed_folders(&statuses.combined, &workdir);
-        let history = read_history(&repository, previous).unwrap_or_else(|error| {
-            log::warn!("failed to read git history: {error:#}");
-            CommitHistory::default()
-        });
+        let history =
+            read_history(&repository, previous, options.history_limit).unwrap_or_else(|error| {
+                log::warn!("failed to read git history: {error:#}");
+                CommitHistory::default()
+            });
         Ok(Some(Self {
             workdir,
             branch: branch.into(),
@@ -49,15 +67,19 @@ impl GitState {
             unstaged: statuses.unstaged,
             changed_folders,
             history: history.commits,
+            has_more_history: history.has_more,
             git_dirs: git_dirs(&repository),
             history_head: history.head,
+            history_limit: history.limit,
         }))
     }
 
     pub(crate) fn commit_history(&self) -> CommitHistory {
         CommitHistory {
             head: self.history_head,
+            limit: self.history_limit,
             commits: self.history.clone(),
+            has_more: self.has_more_history,
         }
     }
 

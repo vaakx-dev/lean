@@ -8,8 +8,6 @@ use gpui_kit::SharedString;
 
 use order::children_before_parents;
 
-const HISTORY_LIMIT: usize = 50;
-
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct CommitSummary {
     pub(crate) id: git2::Oid,
@@ -24,13 +22,19 @@ pub(crate) struct CommitSummary {
 #[derive(Clone, Default)]
 pub(crate) struct CommitHistory {
     pub(super) head: Option<git2::Oid>,
+    pub(super) limit: usize,
     pub(super) commits: Arc<[CommitSummary]>,
+    pub(super) has_more: bool,
 }
 
 pub(super) fn read_history(
     repository: &git2::Repository,
     previous: Option<CommitHistory>,
+    limit: usize,
 ) -> Result<CommitHistory> {
+    if limit == 0 {
+        return Ok(CommitHistory::default());
+    }
     let head = match repository.head() {
         Ok(head) => head.peel_to_commit()?,
         Err(error)
@@ -43,20 +47,29 @@ pub(super) fn read_history(
         }
         Err(error) => return Err(error.into()),
     };
-    if let Some(previous) = previous.filter(|previous| previous.head == Some(head.id())) {
+    if let Some(previous) =
+        previous.filter(|previous| previous.head == Some(head.id()) && previous.limit == limit)
+    {
         return Ok(previous);
     }
+    let (commits, has_more) = walk_history(repository, &head, limit)?;
     Ok(CommitHistory {
         head: Some(head.id()),
-        commits: walk_history(repository, &head)?.into(),
+        limit,
+        commits: commits.into(),
+        has_more,
     })
 }
 
-fn walk_history(repository: &git2::Repository, head: &git2::Commit) -> Result<Vec<CommitSummary>> {
+fn walk_history(
+    repository: &git2::Repository,
+    head: &git2::Commit,
+    limit: usize,
+) -> Result<(Vec<CommitSummary>, bool)> {
     let mut queue = BinaryHeap::from([(head.time().seconds(), head.id())]);
     let mut seen = HashSet::from([head.id()]);
-    let mut history = Vec::with_capacity(HISTORY_LIMIT);
-    while history.len() < HISTORY_LIMIT
+    let mut history = Vec::with_capacity(limit);
+    while history.len() < limit
         && let Some((_, id)) = queue.pop()
     {
         let commit = repository.find_commit(id)?;
@@ -67,7 +80,7 @@ fn walk_history(repository: &git2::Repository, head: &git2::Commit) -> Result<Ve
         }
         history.push(summarize(&commit));
     }
-    Ok(children_before_parents(history))
+    Ok((children_before_parents(history), !queue.is_empty()))
 }
 
 fn summarize(commit: &git2::Commit) -> CommitSummary {

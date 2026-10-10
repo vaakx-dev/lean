@@ -9,8 +9,6 @@ use crate::plugins::search::engine;
 use crate::plugins::search::query::{SearchOptions, SearchQuery};
 use crate::plugins::search::results::{SearchBatch, SearchResults};
 
-pub(super) const TYPING_DELAY: Duration = Duration::from_millis(150);
-
 pub(super) enum SearchStatus {
     Idle,
     Searching,
@@ -50,12 +48,11 @@ impl SearchPanel {
             return;
         }
         let root = self.project.read(cx).root().to_path_buf();
-        let job = match engine::prepare(root, &query) {
+        let job = match engine::prepare(root, query) {
             Ok(job) => job,
             Err(message) => {
-                self.search_task = None;
+                self.clear_results(cx);
                 self.status = SearchStatus::Failed(message);
-                cx.notify();
                 return;
             }
         };
@@ -102,6 +99,7 @@ impl SearchPanel {
             options: self.options,
             include,
             exclude,
+            config: self.config.clone(),
         }
     }
 

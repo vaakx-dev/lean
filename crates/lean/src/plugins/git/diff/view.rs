@@ -12,6 +12,7 @@ use gpui_kit::*;
 
 use super::base::DiffBase;
 use crate::files::file_name;
+use crate::plugins::git::settings::{DIFF_CONTEXT_LINES, diff_context_lines};
 use crate::plugins::{FileView, FileViewEvent};
 use crate::workspace::status_item;
 use document::DiffDocument;
@@ -26,6 +27,7 @@ pub(crate) struct DiffView {
     focus_handle: FocusHandle,
     scroll_handle: UniformListScrollHandle,
     _load: Task<()>,
+    _context_lines: Subscription,
 }
 
 impl EventEmitter<FileViewEvent> for DiffView {}
@@ -48,6 +50,8 @@ impl DiffView {
                 focus_handle: cx.focus_handle(),
                 scroll_handle: UniformListScrollHandle::new(),
                 _load: Task::ready(()),
+                _context_lines: DIFF_CONTEXT_LINES
+                    .observe(cx, |view: &mut Self, _, cx| view.refresh(cx)),
             };
             view.refresh(cx);
             view
@@ -62,7 +66,9 @@ impl DiffView {
         let repo_root = self.repo_root.clone();
         let path = self.path.clone();
         let base = self.base;
-        let load = cx.background_spawn(async move { load_document(&repo_root, &path, base) });
+        let context_lines = diff_context_lines(cx);
+        let load = cx
+            .background_spawn(async move { load_document(&repo_root, &path, base, context_lines) });
         self._load = cx.spawn(async move |view, cx| {
             let result = load.await;
             if let Err(error) = view.update(cx, |view, cx| view.show(result, cx)) {

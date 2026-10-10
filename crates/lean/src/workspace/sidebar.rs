@@ -4,10 +4,12 @@ use gpui_kit::*;
 
 use super::Workspace;
 use super::panels::SidebarPanel;
+use super::settings::DEFAULT_PANEL;
+use crate::explorer;
 
 impl Workspace {
     pub(super) fn show_panel(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.panels.iter().position(|panel| panel.panel.id == id) {
+        if let Some(index) = self.panel_index(id) {
             self.activate_panel(index, window, cx);
         }
     }
@@ -25,8 +27,20 @@ impl Workspace {
         }
     }
 
+    pub(super) fn panel_index(&self, id: &str) -> Option<usize> {
+        self.panels.iter().position(|panel| panel.panel.id == id)
+    }
+
+    pub(super) fn default_panel_index(&self, cx: &App) -> usize {
+        self.panel_index(&DEFAULT_PANEL.get(cx)).unwrap_or(0)
+    }
+
     fn activate_panel(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.active_panel = index;
+        self.show_sidebar(window, cx);
+    }
+
+    pub(super) fn show_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sidebar_visible = true;
         self.focus_sidebar(window, cx);
         cx.notify();
@@ -45,7 +59,17 @@ impl Workspace {
         cx.notify();
     }
 
-    pub(crate) fn focus_sidebar(&self, window: &mut Window, cx: &mut App) {
+    pub(crate) fn focus_initial(&self, window: &mut Window, cx: &mut App) {
+        if self.shows_sidebar() {
+            self.focus_sidebar(window, cx);
+        } else {
+            self.context
+                .editor_area
+                .update(cx, |area, cx| area.focus_active(window, cx));
+        }
+    }
+
+    pub(super) fn focus_sidebar(&self, window: &mut Window, cx: &mut App) {
         match self.active_sidebar_panel() {
             Some(panel) => panel.view.focus(window, cx),
             None => window.focus(&self.focus_handle, cx),
@@ -60,11 +84,11 @@ impl Workspace {
         self.panels.get(self.active_panel)
     }
 
-    pub(super) fn render_sidebar(&self, cx: &Context<Self>) -> Div {
+    pub(super) fn render_sidebar(&self, width: Pixels, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
         let panel = self.active_sidebar_panel();
         v_flex()
-            .w(self.sidebar_width)
+            .w(width)
             .flex_shrink_0()
             .h_full()
             .overflow_hidden()
@@ -73,14 +97,16 @@ impl Workspace {
             .bg(theme.sidebar)
             .when_some(panel, |sidebar, panel| {
                 sidebar
-                    .child(
-                        h_flex()
-                            .h(px(36.))
-                            .flex_shrink_0()
-                            .px_3()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(panel.panel.title),
-                    )
+                    .when(panel.panel.id != explorer::PANEL.id, |sidebar| {
+                        sidebar.child(
+                            h_flex()
+                                .h(px(36.))
+                                .flex_shrink_0()
+                                .px_3()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(panel.panel.title),
+                        )
+                    })
                     .child(
                         div().flex_1().min_h_0().child(
                             panel

@@ -1,4 +1,4 @@
-use gpui_kit::component::{ActiveTheme as _, Icon, Theme, h_flex};
+use gpui_kit::component::{ActiveTheme as _, Theme, h_flex};
 use gpui_kit::*;
 
 use super::Workspace;
@@ -16,34 +16,17 @@ impl Workspace {
             .justify_between()
             .text_sm()
             .text_color(theme.muted_foreground)
-            .child(self.render_project_status(cx))
-            .child(self.render_editor_status(cx))
-    }
-
-    fn render_project_status(&self, cx: &Context<Self>) -> Div {
-        let theme = cx.theme();
-        h_flex()
-            .h_full()
-            .gap_1()
-            .children(self.status_items.iter().cloned())
             .child(
-                status_item("problems", theme)
-                    .child(Icon::empty().path("icons/circle-x.svg").size_4())
-                    .child("0")
-                    .child(Icon::empty().path("icons/triangle-alert.svg").size_4())
-                    .child("0"),
+                h_flex()
+                    .h_full()
+                    .gap_1()
+                    .children(self.status_items.iter().cloned()),
             )
-    }
-
-    fn render_editor_status(&self, cx: &Context<Self>) -> Div {
-        let theme = cx.theme();
-        h_flex()
-            .h_full()
-            .gap_1()
-            .children(self.context.editor_area.read(cx).status_items(cx))
             .child(
-                status_item("notifications", theme)
-                    .child(Icon::empty().path("icons/bell.svg").size_4()),
+                h_flex()
+                    .h_full()
+                    .gap_1()
+                    .children(self.context.editor_area.read(cx).status_items(cx)),
             )
     }
 }

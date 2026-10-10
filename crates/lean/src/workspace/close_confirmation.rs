@@ -1,6 +1,7 @@
 use gpui_kit::*;
 
 use super::Workspace;
+use crate::app::settings::{CONFIRM_QUIT_RUNNING_WORK, CONFIRM_UNSAVED_CLOSE};
 
 #[derive(Clone, Copy)]
 pub(crate) enum CloseIntent {
@@ -70,18 +71,22 @@ impl Workspace {
     }
 
     fn close_prompt(&self, intent: CloseIntent, cx: &App) -> Option<ClosePrompt> {
-        let unsaved = self.context.editor_area.read(cx).unsaved_file_names();
+        let unsaved = if CONFIRM_UNSAVED_CLOSE.get(cx) {
+            self.context.editor_area.read(cx).unsaved_file_names()
+        } else {
+            Vec::new()
+        };
         let processes = match intent {
-            CloseIntent::Quit => None,
-            CloseIntent::SwitchProject => self.running_processes_notice(cx),
+            CloseIntent::Quit if !CONFIRM_QUIT_RUNNING_WORK.get(cx) => None,
+            intent => self.running_processes_notice(intent, cx),
         };
         let prompt = match (unsaved.as_slice(), processes) {
             ([], None) => return None,
             ([], Some(notice)) => ClosePrompt {
-                message: "Do you want to switch projects?".into(),
+                message: intent.question().into(),
                 detail: notice,
                 buttons: vec![
-                    PromptButton::ok("Switch Project"),
+                    PromptButton::ok(intent.action_label()),
                     PromptButton::cancel("Cancel"),
                 ],
                 choices: vec![Choice::Proceed, Choice::Cancel],
@@ -100,7 +105,7 @@ impl Workspace {
         Some(prompt)
     }
 
-    fn running_processes_notice(&self, cx: &App) -> Option<String> {
+    fn running_processes_notice(&self, intent: CloseIntent, cx: &App) -> Option<String> {
         let terminals = self.running_terminal_count(cx);
         let terminal_effect =
             (terminals > 0).then(|| format!("close {}", counted(terminals, "terminal")));
@@ -116,9 +121,33 @@ impl Workspace {
             return None;
         }
         Some(format!(
-            "Switching projects will {}.",
+            "{} will {}.",
+            intent.gerund(),
             effects.join(" and ")
         ))
+    }
+}
+
+impl CloseIntent {
+    fn question(self) -> &'static str {
+        match self {
+            Self::Quit => "Do you want to quit Lean?",
+            Self::SwitchProject => "Do you want to switch projects?",
+        }
+    }
+
+    fn action_label(self) -> &'static str {
+        match self {
+            Self::Quit => "Quit",
+            Self::SwitchProject => "Switch Project",
+        }
+    }
+
+    fn gerund(self) -> &'static str {
+        match self {
+            Self::Quit => "Quitting",
+            Self::SwitchProject => "Switching projects",
+        }
     }
 }
 

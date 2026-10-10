@@ -1,9 +1,16 @@
-use gpui_kit::component::{ActiveTheme as _, Theme, h_flex, v_flex};
-use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::kbd::Kbd;
+use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::*;
 
-pub(super) fn render_watermark(cx: &App) -> Div {
-    let theme = cx.theme();
+use crate::app::actions::{OpenFolder, OpenSettings, ToggleSidebar, ToggleTerminal};
+
+pub(super) fn render_watermark(window: &Window, cx: &App) -> Div {
+    let shortcuts: [(&'static str, &dyn Action); 4] = [
+        ("Open Folder", &OpenFolder),
+        ("Toggle Sidebar", &ToggleSidebar),
+        ("Toggle Terminal", &ToggleTerminal),
+        ("Open Settings", &OpenSettings),
+    ];
     v_flex()
         .size_full()
         .items_center()
@@ -16,47 +23,22 @@ pub(super) fn render_watermark(cx: &App) -> Div {
                 .with_fallback(|| div().into_any_element()),
         )
         .child(
-            v_flex()
-                .w(px(340.))
-                .gap_3()
-                .child(shortcut("Open Folder", &["Ctrl", "O"], theme))
-                .child(shortcut("Toggle Sidebar", &["Ctrl", "B"], theme))
-                .child(shortcut("Toggle Terminal", &["Ctrl", "`"], theme)),
-        )
-}
-
-fn shortcut(label: &'static str, keys: &'static [&'static str], theme: &Theme) -> Div {
-    h_flex()
-        .w_full()
-        .justify_between()
-        .gap_8()
-        .child(div().text_color(theme.muted_foreground).child(label))
-        .child(
-            h_flex().gap_1().children(
-                keys.iter()
-                    .copied()
-                    .enumerate()
-                    .map(|(index, key)| key_cap(index, key, theme)),
+            v_flex().w(px(340.)).gap_3().children(
+                shortcuts
+                    .into_iter()
+                    .filter_map(|(label, action)| shortcut(label, action, window, cx)),
             ),
         )
 }
 
-fn key_cap(index: usize, key: &'static str, theme: &Theme) -> Div {
-    h_flex()
-        .gap_1()
-        .when(index > 0, |keys| {
-            keys.child(div().text_color(theme.muted_foreground).child("+"))
-        })
-        .child(
-            div()
-                .px_1p5()
-                .py_0p5()
-                .text_xs()
-                .rounded(px(4.))
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.muted)
-                .text_color(theme.foreground)
-                .child(key),
-        )
+fn shortcut(label: &'static str, action: &dyn Action, window: &Window, cx: &App) -> Option<Div> {
+    let key = Kbd::global_binding_for_action(action, window)?;
+    Some(
+        h_flex()
+            .w_full()
+            .justify_between()
+            .gap_8()
+            .child(div().text_color(cx.theme().muted_foreground).child(label))
+            .child(key.outline()),
+    )
 }

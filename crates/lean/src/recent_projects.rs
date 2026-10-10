@@ -1,15 +1,16 @@
 mod menu;
 mod picker;
+pub(crate) mod settings;
 mod store;
 
 use std::path::{Path, PathBuf};
 
 use gpui_kit::{App, Global};
 
+use settings::RECENT_LIMIT;
+
 pub(crate) use menu::open_recent_menu;
 pub(crate) use picker::open_picker;
-
-const LIMIT: usize = 20;
 
 struct RecentProjects {
     current: Option<PathBuf>,
@@ -18,12 +19,25 @@ struct RecentProjects {
 
 impl Global for RecentProjects {}
 
-pub(crate) fn init(project_root: PathBuf, cx: &mut App) {
+pub(crate) fn init(cx: &mut App) {
+    let mut paths = store::load();
+    let count = paths.len();
+    paths.retain(|path| path.is_dir());
+    if paths.len() != count {
+        store::save(paths.clone(), cx);
+    }
     cx.set_global(RecentProjects {
         current: None,
-        paths: store::load(),
+        paths,
     });
-    make_current(project_root, cx);
+}
+
+pub(crate) fn last_opened(cx: &App) -> Option<PathBuf> {
+    cx.global::<RecentProjects>()
+        .paths
+        .iter()
+        .find(|path| path.is_dir())
+        .cloned()
 }
 
 pub(crate) fn others(cx: &App) -> Vec<PathBuf> {
@@ -31,6 +45,7 @@ pub(crate) fn others(cx: &App) -> Vec<PathBuf> {
     recent
         .paths
         .iter()
+        .take(RECENT_LIMIT.get(cx))
         .filter(|path| recent.current.as_ref() != Some(*path))
         .cloned()
         .collect()
@@ -46,6 +61,7 @@ pub(crate) fn record_opened(path: PathBuf, cx: &mut App) -> bool {
 }
 
 fn make_current(path: PathBuf, cx: &mut App) {
+    let limit = RECENT_LIMIT.get(cx);
     let recent = cx.global_mut::<RecentProjects>();
     recent.current = Some(path.clone());
     if recent.paths.first() == Some(&path) {
@@ -53,7 +69,7 @@ fn make_current(path: PathBuf, cx: &mut App) {
     }
     recent.paths.retain(|recent_path| *recent_path != path);
     recent.paths.insert(0, path);
-    recent.paths.truncate(LIMIT);
+    recent.paths.truncate(limit);
     let paths = recent.paths.clone();
     store::save(paths, cx);
 }

@@ -7,6 +7,7 @@ use gpui_kit::component::input::GutterMarker;
 use gpui_kit::*;
 
 use super::snapshot::Snapshot;
+use crate::files::settings::SaveFormat;
 
 pub(crate) enum FileViewEvent {
     Edited,
@@ -24,6 +25,14 @@ pub(crate) trait FileView: Render + Focusable + EventEmitter<FileViewEvent> {
     fn snapshot(&mut self, _: &mut Context<Self>) -> Option<Result<Snapshot>> {
         None
     }
+
+    fn prepare_save(&mut self, _: &SaveFormat, _: &mut Window, _: &mut Context<Self>) {}
+
+    fn unsaved_text(&self, _: &App) -> Option<Rope> {
+        None
+    }
+
+    fn restore_unsaved(&mut self, _: Rope, _: &mut Window, _: &mut Context<Self>) {}
 
     fn set_path(&mut self, _: &Path, _: &mut Context<Self>) {}
 
@@ -50,6 +59,9 @@ pub(crate) trait FileViewHandle {
     fn reload(&self, bytes: Vec<u8>, window: &mut Window, cx: &mut App) -> Result<()>;
     fn differs_from_saved(&self, cx: &App) -> bool;
     fn snapshot(&self, cx: &mut App) -> Option<Result<Snapshot>>;
+    fn prepare_save(&self, format: &SaveFormat, window: &mut Window, cx: &mut App);
+    fn unsaved_text(&self, cx: &App) -> Option<Rope>;
+    fn restore_unsaved(&self, text: Rope, window: &mut Window, cx: &mut App);
     fn set_path(&self, path: &Path, cx: &mut App);
     fn status_items(&self, cx: &App) -> Vec<AnyElement>;
     fn running_work(&self, cx: &App) -> Option<&'static str>;
@@ -82,6 +94,18 @@ impl<T: FileView> FileViewHandle for Entity<T> {
 
     fn snapshot(&self, cx: &mut App) -> Option<Result<Snapshot>> {
         self.update(cx, |view, cx| view.snapshot(cx))
+    }
+
+    fn prepare_save(&self, format: &SaveFormat, window: &mut Window, cx: &mut App) {
+        self.update(cx, |view, cx| view.prepare_save(format, window, cx));
+    }
+
+    fn unsaved_text(&self, cx: &App) -> Option<Rope> {
+        self.read(cx).unsaved_text(cx)
+    }
+
+    fn restore_unsaved(&self, text: Rope, window: &mut Window, cx: &mut App) {
+        self.update(cx, |view, cx| view.restore_unsaved(text, window, cx));
     }
 
     fn set_path(&self, path: &Path, cx: &mut App) {

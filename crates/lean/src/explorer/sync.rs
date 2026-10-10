@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{Context, Window};
+use gpui_kit::{App, Context, Window};
 
 use super::Explorer;
+use super::settings::GitIgnored;
 use crate::watcher::{DiskEntry, FsChanges};
 
 impl Explorer {
@@ -13,12 +14,12 @@ impl Explorer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        for folder in self.folders_to_reload(changes) {
+        for folder in self.folders_to_reload(changes, cx) {
             self.reload_folder(folder, window, cx);
         }
     }
 
-    fn folders_to_reload(&self, changes: &FsChanges) -> HashSet<PathBuf> {
+    fn folders_to_reload(&self, changes: &FsChanges, cx: &App) -> HashSet<PathBuf> {
         if changes.rescan {
             return std::iter::once(&self.root)
                 .chain(&self.expanded)
@@ -38,7 +39,26 @@ impl Explorer {
                 folders.insert(parent.to_path_buf());
             }
         }
+        if self.options.git_ignored != GitIgnored::Hide {
+            folders.extend(self.folders_with_changed_ignored(changes, cx));
+        }
         folders
+    }
+
+    fn folders_with_changed_ignored(&self, changes: &FsChanges, cx: &App) -> Vec<PathBuf> {
+        let project = self.project.read(cx);
+        changes
+            .ignored
+            .iter()
+            .filter_map(|path| {
+                let parent = path
+                    .parent()
+                    .filter(|parent| self.children.contains_key(*parent))?;
+                let is_listed = self.listed_entry(parent, path) != DiskEntry::Missing;
+                let exists = path.symlink_metadata().is_ok();
+                (is_listed != exists && !project.is_excluded(path)).then(|| parent.to_path_buf())
+            })
+            .collect()
     }
 
     fn listed_entry(&self, folder: &Path, path: &Path) -> DiskEntry {

@@ -12,6 +12,7 @@ actions!(
         NextEditor,
         OpenFolder,
         OpenRecent,
+        OpenSettings,
         PreviousEditor,
         Quit,
         RefreshExplorer,

@@ -1,27 +1,32 @@
 pub(crate) mod actions;
 mod cli;
-mod keymap;
+pub(crate) mod keybindings;
+pub(crate) mod keymap;
+mod logging;
 mod menus;
 mod quit;
+pub(crate) mod settings;
 mod window;
 
-use std::path::PathBuf;
-
 use crate::assets::Assets;
-use crate::{plugins, recent_projects, settings, theme};
+use crate::{plugins, recent_projects, theme};
 use actions::Quit;
 
-pub(crate) use cli::project_root_from_args;
+pub(crate) use cli::{LaunchTarget, launch_target_from_args};
+pub(crate) use logging::init_logging;
 pub(crate) use menus::set_menus;
+pub(crate) use quit::restart;
 
-pub(crate) fn run(project_root: PathBuf) {
+pub(crate) fn run(launch: LaunchTarget) {
     gpui_kit::application().with_assets(Assets).run(move |cx| {
         gpui_kit::init(cx);
+        crate::settings::init(cx);
+        logging::follow_log_level(cx);
+        crate::files::settings::init(cx);
         theme::init(cx);
         keymap::bind_keys(cx);
-        settings::init(cx);
         plugins::init(cx);
-        recent_projects::init(project_root.clone(), cx);
+        recent_projects::init(cx);
         menus::set_menus(cx);
 
         cx.on_action(|_: &Quit, cx| quit::quit(cx));
@@ -32,7 +37,8 @@ pub(crate) fn run(project_root: PathBuf) {
         })
         .detach();
 
-        if let Err(error) = window::open_main_window(project_root, cx) {
+        let project_root = launch.project_root(cx);
+        if let Err(error) = window::open_main_window(project_root, launch.file.clone(), cx) {
             log::error!("failed to open the main window: {error:#}");
             cx.quit();
         }

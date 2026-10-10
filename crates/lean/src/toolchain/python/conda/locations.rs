@@ -29,8 +29,13 @@ const SYSTEM_INSTALL_DIRS: &[&str] = &[
     "C:\\ProgramData\\miniforge3",
 ];
 
-pub(super) fn candidate_prefixes(project_root: &Path) -> Vec<PathBuf> {
+pub(super) fn candidate_prefixes(project_root: &Path, search_paths: &[PathBuf]) -> Vec<PathBuf> {
     let mut prefixes = child_dirs(&project_root.join(PIXI_DIR).join("envs"));
+    for folder in search_paths {
+        prefixes.push(folder.clone());
+        prefixes.extend(child_dirs(folder));
+        prefixes.extend(child_dirs(&folder.join("envs")));
+    }
     for root in installation_roots() {
         let envs = child_dirs(&root.join("envs"));
         prefixes.push(root);

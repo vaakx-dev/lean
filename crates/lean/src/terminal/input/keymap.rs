@@ -1,27 +1,22 @@
-use gpui_kit::{App, KeyBinding, NoAction, actions};
+use gpui_kit::{App, KeyBinding, actions};
 
-actions!(terminal, [Paste]);
+use super::passthrough::{bind_passthrough_keys, watch_passthrough_keys};
+use crate::app::keymap;
+
+actions!(terminal, [CopySelection, Paste]);
 
 pub(crate) const KEY_CONTEXT: &str = "Terminal";
 
-const SHELL_KEYSTROKES: [&str; 8] = [
-    "ctrl-c",
-    "ctrl-r",
-    "ctrl-w",
-    "ctrl-b",
-    "ctrl-s",
-    "ctrl-o",
-    "tab",
-    "shift-tab",
-];
-
 pub(crate) fn bind_keys(cx: &mut App) {
-    let shell_bindings = SHELL_KEYSTROKES
-        .into_iter()
-        .map(|keystroke| KeyBinding::new(keystroke, NoAction, Some(KEY_CONTEXT)));
-    let paste_bindings = [
-        KeyBinding::new("ctrl-shift-v", Paste, Some(KEY_CONTEXT)),
-        KeyBinding::new("shift-insert", Paste, Some(KEY_CONTEXT)),
-    ];
-    cx.bind_keys(shell_bindings.chain(paste_bindings));
+    keymap::bind_defaults(
+        cx,
+        [
+            KeyBinding::new("ctrl-shift-c", CopySelection, Some(KEY_CONTEXT)),
+            KeyBinding::new("ctrl-insert", CopySelection, Some(KEY_CONTEXT)),
+            KeyBinding::new("ctrl-shift-v", Paste, Some(KEY_CONTEXT)),
+            KeyBinding::new("shift-insert", Paste, Some(KEY_CONTEXT)),
+        ],
+    );
+    bind_passthrough_keys(cx);
+    watch_passthrough_keys(cx);
 }

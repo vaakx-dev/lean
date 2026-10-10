@@ -3845,6 +3845,7 @@ dependencies = [
  "ropey",
  "runtimelib",
  "rust-embed",
+ "serde",
  "serde_json",
  "tokio",
  "trash",

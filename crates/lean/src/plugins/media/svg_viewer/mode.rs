@@ -4,6 +4,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::SvgViewer;
+use crate::plugins::media::settings::SvgMode;
 
 const MINIMAP_CLEARANCE: Pixels = px(116.);
 
@@ -12,6 +13,16 @@ pub(super) enum Mode {
     Code,
     Preview,
     Split,
+}
+
+impl From<SvgMode> for Mode {
+    fn from(mode: SvgMode) -> Self {
+        match mode {
+            SvgMode::Code => Mode::Code,
+            SvgMode::Preview => Mode::Preview,
+            SvgMode::Split => Mode::Split,
+        }
+    }
 }
 
 impl Mode {

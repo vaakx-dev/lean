@@ -3,7 +3,7 @@ use gpui_kit::*;
 
 use super::SourceControl;
 use super::row_actions::icon_button;
-use super::rows::ViewMode;
+use crate::plugins::git::settings::ViewMode;
 
 impl SourceControl {
     pub(super) fn render_header(&self, cx: &Context<Self>) -> Div {

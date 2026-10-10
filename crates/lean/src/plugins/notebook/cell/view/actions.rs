@@ -1,5 +1,5 @@
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -11,7 +11,9 @@ use crate::plugins::notebook::document::CellKind;
 pub(super) fn render_actions(cell: &Cell, selected: bool, cx: &Context<Notebook>) -> Div {
     let theme = cx.theme();
     let id = cell.id;
+    let unsupported = cell.verbatim.is_some();
     let (kind_label, next_kind) = match cell.kind {
+        _ if unsupported => ("Unsupported", CellKind::Raw),
         CellKind::Code => ("Python", CellKind::Markdown),
         CellKind::Markdown => ("Markdown", CellKind::Code),
         CellKind::Raw => ("Raw", CellKind::Code),
@@ -56,7 +58,12 @@ pub(super) fn render_actions(cell: &Cell, selected: bool, cx: &Context<Notebook>
                 .ghost()
                 .xsmall()
                 .label(kind_label)
-                .tooltip("Change Cell Type")
+                .tooltip(if unsupported {
+                    "Unknown cell type, saved unchanged"
+                } else {
+                    "Change Cell Type"
+                })
+                .disabled(unsupported)
                 .on_click(
                     cx.listener(move |notebook, _, _, cx| {
                         notebook.set_cell_kind(id, next_kind, cx)

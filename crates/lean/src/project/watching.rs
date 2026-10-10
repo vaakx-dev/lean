@@ -2,9 +2,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use gpui_kit::Context;
+use gpui_kit::{Context, SharedString};
 
-use super::{FilesChanged, Project, ProjectEvent};
+use super::{FilesChanged, Project, ProjectEvent, WatchFailed};
 use crate::watcher::{FsChanges, MetadataWatch};
 
 impl Project {
@@ -46,6 +46,10 @@ impl Project {
             }
         }
         cx.emit(ProjectEvent::Activated);
+    }
+
+    pub(crate) fn report_watch_failure(&mut self, message: SharedString, cx: &mut Context<Self>) {
+        cx.emit(WatchFailed(message));
     }
 
     fn rescan_now(&mut self, cx: &mut Context<Self>) {

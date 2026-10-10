@@ -1,12 +1,17 @@
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui_kit::{AppContext as _, Context, Task};
 
 use super::gutter::GutterScope;
 use super::{GitEvent, GitProject};
-use crate::plugins::git::repo::{CommitHistory, GitReadError, GitState, metadata_watch};
+use crate::plugins::git::repo::{
+    CommitHistory, GitReadError, GitState, ReadOptions, metadata_watch,
+};
+use crate::plugins::git::settings::{INCLUDE_UNTRACKED, SHOW_HISTORY};
 use crate::watcher::FsChanges;
+
+const DEBOUNCE: Duration = Duration::from_millis(150);
 
 type GitRead = Result<Option<GitState>, GitReadError>;
 
@@ -14,6 +19,7 @@ pub(super) struct Refresh {
     running: bool,
     queued: bool,
     started: Option<Instant>,
+    scheduled: Option<Task<()>>,
     _task: Task<()>,
 }
 
@@ -23,13 +29,31 @@ impl Default for Refresh {
             running: false,
             queued: false,
             started: None,
+            scheduled: None,
             _task: Task::ready(()),
         }
     }
 }
 
 impl GitProject {
+    pub(super) fn schedule_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.refresh.scheduled.is_some() {
+            return;
+        }
+        self.refresh.scheduled = Some(cx.spawn(async move |git, cx| {
+            cx.background_executor().timer(DEBOUNCE).await;
+            let refreshed = git.update(cx, |git, cx| {
+                git.refresh.scheduled = None;
+                git.refresh(cx);
+            });
+            if let Err(error) = refreshed {
+                log::debug!("git state dropped before a scheduled refresh: {error:#}");
+            }
+        }));
+    }
+
     pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.refresh.scheduled = None;
         if self.refresh.running {
             self.refresh.queued = true;
             return;
@@ -37,12 +61,13 @@ impl GitProject {
         self.refresh.running = true;
         self.refresh._task = cx.spawn(async move |git, cx| {
             loop {
-                let Ok((root, previous)) = git.update(cx, |git, cx| git.begin_read(cx)) else {
+                let Ok((root, previous, options)) = git.update(cx, |git, cx| git.begin_read(cx))
+                else {
                     break;
                 };
                 let result = cx
                     .background_spawn(async move {
-                        GitState::read(&root, previous)
+                        GitState::read(&root, previous, options)
                             .map_err(|error| GitReadError::new(&error, &root))
                     })
                     .await;
@@ -61,7 +86,7 @@ impl GitProject {
     pub(super) fn files_changed(&mut self, changes: &FsChanges, cx: &mut Context<Self>) {
         let affects_git = changes.metadata || changes.touches_files();
         if affects_git && !self.read_covers(changes) {
-            self.refresh(cx);
+            self.schedule_refresh(cx);
         }
     }
 
@@ -73,10 +98,18 @@ impl GitProject {
                 .is_some_and(|(observed, started)| started > observed)
     }
 
-    fn begin_read(&mut self, cx: &Context<Self>) -> (PathBuf, Option<CommitHistory>) {
+    fn begin_read(&mut self, cx: &Context<Self>) -> (PathBuf, Option<CommitHistory>, ReadOptions) {
         self.refresh.started = Some(Instant::now());
         let previous = self.state.as_ref().map(GitState::commit_history);
-        (self.root(cx), previous)
+        let options = ReadOptions {
+            include_untracked: INCLUDE_UNTRACKED.get(cx),
+            history_limit: if SHOW_HISTORY.get(cx) {
+                self.history_limit
+            } else {
+                0
+            },
+        };
+        (self.root(cx), previous, options)
     }
 
     fn finish_read(&mut self, result: GitRead, cx: &mut Context<Self>) -> bool {

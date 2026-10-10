@@ -15,6 +15,7 @@ pub(in crate::plugins::git::source_control) fn push_tree(
     group: ChangeGroup,
     files: &[Rc<ChangedFile>],
     collapsed: &HashSet<(ChangeGroup, PathBuf)>,
+    compact: bool,
     rows: &mut Vec<Row>,
 ) {
     let mut root = FolderNode::default();
@@ -24,6 +25,7 @@ pub(in crate::plugins::git::source_control) fn push_tree(
     let mut walk = TreeWalk {
         group,
         collapsed,
+        compact,
         rows,
     };
     walk.push_children(&root, Path::new(""), 0);
@@ -41,11 +43,16 @@ impl<'a> FolderNode<'a> {
         node.files.push(file);
     }
 
-    fn compact(&self, name: &str, prefix: &Path) -> (String, PathBuf, &FolderNode<'a>) {
+    fn compact(
+        &self,
+        name: &str,
+        prefix: &Path,
+        enabled: bool,
+    ) -> (String, PathBuf, &FolderNode<'a>) {
         let mut label = name.to_string();
         let mut relative_path = prefix.join(name);
         let mut node = self;
-        while node.files.is_empty() && node.folders.len() == 1 {
+        while enabled && node.files.is_empty() && node.folders.len() == 1 {
             let Some((child_name, child)) = node.folders.iter().next() else {
                 break;
             };
@@ -60,13 +67,14 @@ impl<'a> FolderNode<'a> {
 struct TreeWalk<'a> {
     group: ChangeGroup,
     collapsed: &'a HashSet<(ChangeGroup, PathBuf)>,
+    compact: bool,
     rows: &'a mut Vec<Row>,
 }
 
 impl TreeWalk<'_> {
     fn push_children(&mut self, node: &FolderNode, prefix: &Path, depth: usize) {
         for (name, child) in &node.folders {
-            let (label, relative_path, folder) = child.compact(name, prefix);
+            let (label, relative_path, folder) = child.compact(name, prefix, self.compact);
             let expanded = !self
                 .collapsed
                 .contains(&(self.group, relative_path.clone()));

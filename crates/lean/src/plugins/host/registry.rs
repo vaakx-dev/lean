@@ -74,7 +74,7 @@ pub(crate) fn file_actions(path: &Path, cx: &App) -> Vec<FileAction> {
     cx.global::<Registry>()
         .file_actions
         .iter()
-        .filter(|action| (action.applies)(path))
+        .filter(|action| (action.applies)(path, cx))
         .copied()
         .collect()
 }

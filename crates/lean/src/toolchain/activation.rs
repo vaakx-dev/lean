@@ -37,7 +37,16 @@ pub(super) fn activation_environment(
     for toolchain in active {
         environment.extend(toolchain.variables.iter().cloned());
     }
+    clear_inherited_variables(known, &mut environment);
     environment
+}
+
+fn clear_inherited_variables(known: &[Toolchain], environment: &mut HashMap<String, String>) {
+    for (name, _) in known.iter().flat_map(|toolchain| &toolchain.variables) {
+        if env::var_os(name).is_some() {
+            environment.entry(name.clone()).or_default();
+        }
+    }
 }
 
 pub(super) fn activation_command(active: &[&Toolchain], shell: ShellKind) -> Option<String> {

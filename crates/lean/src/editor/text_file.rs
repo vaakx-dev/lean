@@ -1,39 +1,41 @@
 mod language;
+mod options;
 mod status;
 mod viewer;
 
 use std::path::Path;
 
 use anyhow::Result;
-use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::component::input::{
-    Editor, EditorState, GutterMarker, InputEvent, Position, Rope, TabSize,
-};
+use gpui_kit::component::input::{Editor, EditorState, GutterMarker, InputEvent, Position, Rope};
 use gpui_kit::*;
 
 use super::file_text::{LineEnding, decode_text, same_text};
 use super::minimap::{Minimap, render_minimap};
+use super::saving::format_for_save;
+use super::settings::{MINIMAP_ENABLED, font_family, font_size, line_height};
 use crate::files::Language;
+use crate::files::settings::SaveFormat;
 use crate::plugins::{FileView, FileViewEvent, Snapshot};
+use crate::settings::Settings;
 use crate::toolchain::Toolchains;
 use language::language_for;
+use options::EditorOptions;
 
 pub(crate) use viewer::TEXT_VIEWER;
 
-const TAB_SIZE: TabSize = TabSize {
-    tab_size: 4,
-    hard_tabs: false,
-};
+const BYTE_ORDER_MARK: char = '\u{feff}';
 
 pub(super) struct TextFile {
     editor: Entity<EditorState>,
-    minimap: Entity<Minimap>,
+    minimap: Option<Entity<Minimap>>,
     toolchains: Entity<Toolchains>,
     saved: Rope,
     cursor: Position,
     language: Language,
     line_ending: LineEnding,
-    _subscriptions: [Subscription; 2],
+    byte_order_mark: bool,
+    options: EditorOptions,
+    _subscriptions: [Subscription; 3],
 }
 
 impl EventEmitter<FileViewEvent> for TextFile {}
@@ -48,18 +50,17 @@ impl TextFile {
         cx: &mut Context<Self>,
     ) -> Self {
         let language = language_for(path, content.len());
+        let options = EditorOptions::read(cx);
+        let byte_order_mark = content.starts_with(BYTE_ORDER_MARK);
         let editor = cx.new(|cx| {
-            EditorState::new(window, cx)
+            let state = EditorState::new(window, cx)
                 .language(language.id())
-                .line_number(true)
-                .indent_guides(true)
-                .folding(true)
-                .searchable(true)
-                .soft_wrap(false)
-                .tab_size(TAB_SIZE)
-                .default_value(content)
+                .searchable(true);
+            options.configure(state).default_value(content)
         });
-        let minimap = cx.new(|cx| Minimap::new(editor.clone(), cx));
+        let minimap = MINIMAP_ENABLED
+            .get(cx)
+            .then(|| cx.new(|cx| Minimap::new(editor.clone(), cx)));
         let saved = editor.read(cx).text().clone();
         let cursor = editor.read(cx).cursor_position();
         let subscriptions = [
@@ -69,6 +70,9 @@ impl TextFile {
                 }
             }),
             cx.observe(&editor, |text, editor, cx| text.sync_cursor(editor, cx)),
+            cx.observe_global_in::<Settings>(window, |text, window, cx| {
+                text.apply_settings(window, cx)
+            }),
         ];
         Self {
             editor,
@@ -78,6 +82,8 @@ impl TextFile {
             cursor,
             language,
             line_ending,
+            byte_order_mark,
+            options,
             _subscriptions: subscriptions,
         }
     }
@@ -89,6 +95,30 @@ impl TextFile {
             cx.emit(FileViewEvent::StatusChanged);
         }
     }
+
+    fn apply_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let options = EditorOptions::read(cx);
+        if options != self.options {
+            let previous = std::mem::replace(&mut self.options, options);
+            self.editor.update(cx, |editor, cx| {
+                options.apply(&previous, editor, window, cx)
+            });
+            cx.emit(FileViewEvent::StatusChanged);
+        }
+        self.sync_minimap(cx);
+        cx.notify();
+    }
+
+    fn sync_minimap(&mut self, cx: &mut Context<Self>) {
+        let enabled = MINIMAP_ENABLED.get(cx);
+        if enabled == self.minimap.is_some() {
+            return;
+        }
+        self.minimap = enabled.then(|| {
+            let editor = self.editor.clone();
+            cx.new(|cx| Minimap::new(editor, cx))
+        });
+    }
 }
 
 impl FileView for TextFile {
@@ -99,16 +129,24 @@ impl FileView for TextFile {
         cx: &mut Context<Self>,
     ) -> Result<()> {
         let (text, line_ending) = decode_text(bytes)?;
-        self.editor.update(cx, |editor, cx| {
+        let byte_order_mark = text.starts_with(BYTE_ORDER_MARK);
+        let changed = self.editor.update(cx, |editor, cx| {
+            if *editor.text() == text.as_str() {
+                return false;
+            }
             let selection = editor.selected_range();
             let scroll = editor.scroll_offset();
-            editor.set_value(text, window, cx);
+            editor.replace_all(text, window, cx);
             editor.set_selected_range(selection, cx);
             editor.set_scroll_offset(scroll, cx);
-            cx.emit(InputEvent::Change);
+            true
         });
         self.saved = self.editor.read(cx).text().clone();
         self.line_ending = line_ending;
+        self.byte_order_mark = byte_order_mark;
+        if !changed {
+            cx.emit(FileViewEvent::Edited);
+        }
         cx.emit(FileViewEvent::StatusChanged);
         Ok(())
     }
@@ -129,6 +167,24 @@ impl FileView for TextFile {
                 }
             });
         Some(Ok(snapshot))
+    }
+
+    fn prepare_save(&mut self, format: &SaveFormat, window: &mut Window, cx: &mut Context<Self>) {
+        let line_ending = format_for_save(&self.editor, format, self.line_ending, window, cx);
+        if line_ending != self.line_ending {
+            self.line_ending = line_ending;
+            cx.emit(FileViewEvent::StatusChanged);
+        }
+    }
+
+    fn unsaved_text(&self, cx: &App) -> Option<Rope> {
+        Some(self.editor.read(cx).text().clone())
+    }
+
+    fn restore_unsaved(&mut self, text: Rope, window: &mut Window, cx: &mut Context<Self>) {
+        self.editor.update(cx, |editor, cx| {
+            editor.replace_all(String::from(&text), window, cx)
+        });
     }
 
     fn set_path(&mut self, path: &Path, cx: &mut Context<Self>) {
@@ -173,20 +229,21 @@ impl Focusable for TextFile {
 
 impl Render for TextFile {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let editor = Editor::new(&self.editor)
+            .bordered(false)
+            .p_0()
+            .h(relative(1.))
+            .font_family(font_family(cx))
+            .text_size(font_size(cx))
+            .line_height(relative(line_height(cx)));
         div()
             .flex()
             .size_full()
-            .child(
-                div().flex_1().min_w_0().h_full().child(
-                    Editor::new(&self.editor)
-                        .bordered(false)
-                        .p_0()
-                        .h(relative(1.))
-                        .font_family(theme.mono_font_family.clone())
-                        .text_size(theme.mono_font_size),
-                ),
+            .child(div().flex_1().min_w_0().h_full().child(editor))
+            .children(
+                self.minimap
+                    .as_ref()
+                    .map(|minimap| render_minimap(minimap, cx)),
             )
-            .child(render_minimap(&self.minimap))
     }
 }

@@ -1,31 +1,37 @@
+mod resize;
+
+use std::path::Path;
+
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::*;
 
 use super::Workspace;
-use crate::terminal::{TerminalPanel, TerminalPanelEvent};
-
-const TERMINAL_HEIGHT: Pixels = px(260.);
+use crate::terminal::settings::{CONFIRM_CLOSE_RUNNING, PANEL_HEIGHT};
+use crate::terminal::{StartDirectory, TerminalPanel, TerminalPanelEvent};
+use resize::{TerminalResize, panel_height, terminal_resize_handle};
 
 pub(super) struct TerminalDock {
     panel: Entity<TerminalPanel>,
-    _subscription: Subscription,
+    height: Pixels,
+    _save_height: Task<()>,
+    _subscriptions: [Subscription; 2],
 }
 
 impl Workspace {
     pub(super) fn show_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.terminal_visible = true;
         let panel = self.terminal_panel(window, cx);
-        panel.update(cx, |panel, cx| panel.focus_active(window, cx));
+        panel.update(cx, |panel, cx| panel.reveal(window, cx));
         cx.notify();
     }
 
     pub(super) fn hide_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.terminal_visible = false;
-        let terminal_has_focus = self
-            .terminal
-            .as_ref()
-            .is_some_and(|dock| dock.panel.read(cx).contains_focus(window, cx));
-        if terminal_has_focus {
+        let terminal_had_focus = self.terminal.as_ref().is_some_and(|dock| {
+            let panel = dock.panel.read(cx);
+            panel.is_empty() || panel.contains_focus(window, cx)
+        });
+        if terminal_had_focus {
             self.context
                 .editor_area
                 .update(cx, |area, cx| area.focus_active(window, cx));
@@ -49,12 +55,15 @@ impl Workspace {
     }
 
     pub(super) fn running_terminal_count(&self, cx: &App) -> usize {
+        if !CONFIRM_CLOSE_RUNNING.get(cx) {
+            return 0;
+        }
         self.terminal
             .as_ref()
-            .map_or(0, |dock| dock.panel.read(cx).running_count(cx))
+            .map_or(0, |dock| dock.panel.read(cx).busy_count(cx))
     }
 
-    pub(super) fn render_terminal_panel(&self, cx: &App) -> Option<Div> {
+    pub(super) fn render_terminal_panel(&self, cx: &Context<Self>) -> Option<Stateful<Div>> {
         if !self.terminal_visible {
             return None;
         }
@@ -62,18 +71,48 @@ impl Workspace {
         let theme = cx.theme();
         Some(
             div()
-                .h(TERMINAL_HEIGHT)
+                .id("terminal-dock")
+                .relative()
+                .h(dock.height)
                 .flex_shrink_0()
-                .overflow_hidden()
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.sidebar)
+                .on_drag_move(cx.listener(Self::resize_terminal))
                 .child(
-                    dock.panel
-                        .clone()
-                        .cached(StyleRefinement::default().size_full()),
-                ),
+                    div()
+                        .size_full()
+                        .overflow_hidden()
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.sidebar)
+                        .child(
+                            dock.panel
+                                .clone()
+                                .cached(StyleRefinement::default().size_full()),
+                        ),
+                )
+                .child(terminal_resize_handle()),
         )
+    }
+
+    fn resize_terminal(
+        &mut self,
+        event: &DragMoveEvent<TerminalResize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(dock) = self.terminal.as_mut() else {
+            return;
+        };
+        let requested = event.bounds.bottom() - event.event.position.y;
+        let height = panel_height(requested, window.viewport_size().height);
+        if height == dock.height {
+            return;
+        }
+        dock.height = height;
+        dock._save_height = cx.spawn(async move |_, cx| {
+            cx.background_executor().timer(resize::SAVE_DELAY).await;
+            cx.update(|cx| PANEL_HEIGHT.set(height.as_f32().round(), cx));
+        });
+        cx.notify();
     }
 
     fn terminal_panel(
@@ -85,18 +124,33 @@ impl Workspace {
             return dock.panel.clone();
         }
         let root = self.context.project.read(cx).root().to_path_buf();
+        let editor_area = self.context.editor_area.downgrade();
+        let start_directory = StartDirectory::new(root, move |cx| {
+            let area = editor_area.upgrade()?;
+            area.read(cx).active_path().map(Path::to_path_buf)
+        });
         let launch = self.terminal_launch(cx);
-        let panel = cx.new(|cx| TerminalPanel::new(root, launch, cx));
-        let subscription = cx.subscribe_in(
+        let panel = cx.new(|cx| TerminalPanel::new(start_directory, launch, cx));
+        let events = cx.subscribe_in(
             &panel,
             window,
             |workspace, _, event: &TerminalPanelEvent, window, cx| match event {
                 TerminalPanelEvent::Hide => workspace.hide_terminal(window, cx),
             },
         );
+        let height_setting =
+            PANEL_HEIGHT.observe_in(window, cx, |workspace, height, window, cx| {
+                if let Some(dock) = workspace.terminal.as_mut() {
+                    dock.height = panel_height(px(height), window.viewport_size().height);
+                    cx.notify();
+                }
+            });
+        let height = panel_height(px(PANEL_HEIGHT.get(cx)), window.viewport_size().height);
         self.terminal = Some(TerminalDock {
             panel: panel.clone(),
-            _subscription: subscription,
+            height,
+            _save_height: Task::ready(()),
+            _subscriptions: [events, height_setting],
         });
         panel
     }

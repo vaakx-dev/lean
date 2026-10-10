@@ -8,6 +8,7 @@ use gpui_kit::*;
 use super::SourceControl;
 use super::changes::{ChangeGroup, ChangedFile, push_tree};
 use super::row_actions::ROW_GROUP;
+use crate::plugins::git::settings::{VIEW_MODE, ViewMode};
 
 pub(super) const ROW_HEIGHT: Pixels = px(24.);
 
@@ -17,17 +18,12 @@ pub(super) enum Section {
     Commits,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum ViewMode {
-    Tree,
-    List,
-}
-
 pub(super) enum Row {
     Section(Section),
     Folder(FolderRow),
     File(FileRow),
     Commit(usize),
+    LoadMoreCommits,
 }
 
 pub(super) struct FolderRow {
@@ -59,7 +55,13 @@ impl SourceControl {
                 continue;
             }
             match self.view_mode {
-                ViewMode::Tree => push_tree(group, files, &self.collapsed_folders, &mut rows),
+                ViewMode::Tree => push_tree(
+                    group,
+                    files,
+                    &self.collapsed_folders,
+                    self.compact_folders,
+                    &mut rows,
+                ),
                 ViewMode::List => rows.extend(files.iter().map(|file| {
                     Row::File(FileRow {
                         group,
@@ -70,10 +72,13 @@ impl SourceControl {
                 })),
             }
         }
-        if !self.history.entries.is_empty() {
+        if self.show_history && !self.history.entries.is_empty() {
             rows.push(Row::Section(Section::Commits));
             if !self.collapsed_sections.contains(&Section::Commits) {
                 rows.extend((0..self.history.entries.len()).map(Row::Commit));
+                if self.has_more_history {
+                    rows.push(Row::LoadMoreCommits);
+                }
             }
         }
         self.rows = rows;
@@ -92,6 +97,7 @@ impl SourceControl {
                     Row::Folder(folder) => self.render_folder_row(index, folder, cx),
                     Row::File(file) => self.render_file_row(index, file, cx),
                     Row::Commit(entry) => self.render_commit_row(index, *entry, cx),
+                    Row::LoadMoreCommits => self.render_load_more_row(index, cx),
                 };
                 Some(element)
             })
@@ -121,10 +127,16 @@ impl SourceControl {
     }
 
     pub(super) fn toggle_view_mode(&mut self, cx: &mut Context<Self>) {
-        self.view_mode = match self.view_mode {
+        let view_mode = match self.view_mode {
             ViewMode::Tree => ViewMode::List,
             ViewMode::List => ViewMode::Tree,
         };
+        VIEW_MODE.set(view_mode, cx);
+        self.set_view_mode(view_mode, cx);
+    }
+
+    pub(super) fn set_view_mode(&mut self, view_mode: ViewMode, cx: &mut Context<Self>) {
+        self.view_mode = view_mode;
         self.rebuild_rows();
         cx.notify();
     }

@@ -2,19 +2,16 @@ mod view;
 
 use std::time::{Duration, Instant};
 
-use gpui_kit::component::input::{EditorState, InputEvent, TabSize};
+use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::*;
 use serde_json::{Map, Value};
 
 use super::Notebook;
+use super::cell_options::cell_tab_size;
 use super::document::{CellData, CellKind};
 use super::output::Output;
+use super::settings::{LINE_NUMBERS, SOFT_WRAP};
 use crate::plugins::FileViewEvent;
-
-const TAB_SIZE: TabSize = TabSize {
-    tab_size: 4,
-    hard_tabs: false,
-};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct CellId(pub(super) usize);
@@ -35,6 +32,7 @@ pub(super) struct Cell {
     pub(super) run_state: RunState,
     pub(super) editing: bool,
     pub(super) markdown: SharedString,
+    pub(super) verbatim: Option<Value>,
     clear_pending: bool,
     fields: Map<String, Value>,
     _subscription: Subscription,
@@ -49,18 +47,31 @@ impl Cell {
         self.outputs.iter().any(Output::is_error)
     }
 
-    pub(super) fn to_data(&self, cx: &App) -> CellData {
+    pub(super) fn to_data(&self, with_outputs: bool, cx: &App) -> CellData {
+        let outputs = if with_outputs {
+            self.outputs
+                .iter()
+                .map(|output| output.json.clone())
+                .collect()
+        } else {
+            Vec::new()
+        };
         CellData {
             kind: self.kind,
             source: self.editor.read(cx).value().to_string(),
-            outputs: self
-                .outputs
-                .iter()
-                .map(|output| output.json.clone())
-                .collect(),
-            execution_count: self.execution_count,
+            outputs,
+            execution_count: self.execution_count.filter(|_| with_outputs),
             fields: self.fields.clone(),
+            verbatim: self.verbatim.clone(),
         }
+    }
+
+    pub(super) fn rebuild_outputs(&mut self, cx: &mut Context<Notebook>) {
+        self.outputs = self
+            .outputs
+            .iter()
+            .map(|output| Output::new(output.json.clone(), cx))
+            .collect();
     }
 
     pub(super) fn start_run(&mut self) {
@@ -125,16 +136,19 @@ impl Notebook {
         self.next_cell_id += 1;
         let language = editor_language(data.kind, &self.language);
         let editing = data.kind == CellKind::Markdown && data.source.is_empty();
+        let line_numbers = LINE_NUMBERS.get(cx);
+        let soft_wrap = SOFT_WRAP.get(cx);
+        let tab_size = cell_tab_size(cx);
         let editor = cx.new(|cx| {
             EditorState::new(window, cx)
                 .language(language)
-                .line_number(false)
+                .line_number(line_numbers)
                 .folding(false)
                 .indent_guides(false)
-                .soft_wrap(false)
+                .soft_wrap(soft_wrap)
                 .searchable(false)
                 .scroll_beyond_last_line(Some(0))
-                .tab_size(TAB_SIZE)
+                .tab_size(tab_size)
                 .default_value(data.source)
         });
         let subscription = cx.subscribe(&editor, move |notebook, _, event: &InputEvent, cx| {
@@ -153,6 +167,7 @@ impl Notebook {
             run_state: RunState::Idle,
             editing,
             markdown: SharedString::default(),
+            verbatim: data.verbatim,
             clear_pending: false,
             fields: data.fields,
             _subscription: subscription,
@@ -166,7 +181,7 @@ impl Notebook {
         let Some(cell) = self.cell_mut(id) else {
             return;
         };
-        if cell.kind == kind || cell.is_pending() {
+        if cell.kind == kind || cell.is_pending() || cell.verbatim.is_some() {
             return;
         }
         cell.kind = kind;

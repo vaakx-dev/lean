@@ -70,11 +70,13 @@ impl Refresh {
         self.version += 1;
     }
 
-    pub(super) fn sync_styling(&mut self, styling: Styling) {
-        if styling != self.styling {
-            self.styling = styling;
-            self.restyle();
+    pub(super) fn sync_styling(&mut self, styling: Styling) -> bool {
+        if styling == self.styling {
+            return false;
         }
+        self.styling = styling;
+        self.restyle();
+        true
     }
 
     fn delay_for(
@@ -112,7 +114,7 @@ impl Refresh {
 }
 
 impl Minimap {
-    pub(super) fn request_refresh(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn refresh_if_needed(&mut self, cx: &mut Context<Self>) {
         let (Some(visible), Some(wanted)) = (self.visible_lines(), self.wanted_lines()) else {
             return;
         };
@@ -153,6 +155,7 @@ impl Minimap {
             outdated,
             version,
             foreground,
+            &self.style,
         ))
     }
 

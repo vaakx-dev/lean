@@ -16,6 +16,19 @@ impl EditorArea {
         self.open_with(path, None, window, cx);
     }
 
+    pub(crate) fn open_pinned(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let placement = Placement {
+            preview: false,
+            target: None,
+        };
+        self.open_placed(path, placement, window, cx);
+    }
+
     pub(super) fn open_with(
         &mut self,
         path: PathBuf,
@@ -23,8 +36,22 @@ impl EditorArea {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let placement = Placement {
+            preview: self.opens_as_preview(&path, cx),
+            target,
+        };
+        self.open_placed(path, placement, window, cx);
+    }
+
+    fn open_placed(
+        &mut self,
+        path: PathBuf,
+        placement: Placement,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(index) = self.index_of(&path) {
-            self.show(index, target, window, cx);
+            self.show(index, placement, window, cx);
             return;
         }
         let Some(viewer) = viewer_for(&path, cx) else {
@@ -44,7 +71,7 @@ impl EditorArea {
         cx.spawn_in(window, async move |area, cx| {
             let result = read.await;
             let update = area.update_in(cx, |area, window, cx| match result {
-                Ok(disk) => area.insert_file(path, viewer, disk, target, window, cx),
+                Ok(disk) => area.insert_file(path, viewer, disk, placement, window, cx),
                 Err(error) => report_open_error(&path, &error, window, cx),
             });
             if let Err(error) = update {
@@ -87,12 +114,12 @@ impl EditorArea {
         path: PathBuf,
         viewer: FileViewer,
         disk: DiskFile,
-        target: Option<GoTo>,
+        placement: Placement,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if let Some(index) = self.index_of(&path) {
-            self.show(index, target, window, cx);
+            self.show(index, placement, window, cx);
             return;
         }
         let toolchains = self.toolchains.clone();
@@ -103,8 +130,12 @@ impl EditorArea {
                 return;
             }
         };
-        let index = self.insert(file, cx);
-        self.show(index, target, window, cx);
+        let index = if placement.preview {
+            self.insert_preview(file, cx)
+        } else {
+            self.insert(file, cx)
+        };
+        self.show(index, placement, window, cx);
     }
 
     pub(super) fn insert(&mut self, file: OpenFile, cx: &mut Context<Self>) -> usize {
@@ -117,15 +148,24 @@ impl EditorArea {
     fn show(
         &mut self,
         index: usize,
-        target: Option<GoTo>,
+        placement: Placement,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !placement.preview {
+            self.pin(index, cx);
+        }
         self.activate(index, window, cx);
-        if let Some(target) = target {
+        if let Some(target) = placement.target {
             self.go_to(index, target, window, cx);
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct Placement {
+    preview: bool,
+    target: Option<GoTo>,
 }
 
 fn report_open_error(path: &Path, error: &dyn Display, window: &mut Window, cx: &mut App) {

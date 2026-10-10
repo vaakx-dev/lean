@@ -1,6 +1,7 @@
 use gpui_kit::*;
 
 use super::{EditorArea, EditorAreaEvent};
+use crate::app::settings::CONFIRM_UNSAVED_CLOSE;
 
 const SAVE_ANSWER: usize = 0;
 const DISCARD_ANSWER: usize = 1;
@@ -16,7 +17,7 @@ impl EditorArea {
         let Some(file) = self.files.get(index) else {
             return;
         };
-        if !file.dirty {
+        if !file.dirty || !CONFIRM_UNSAVED_CLOSE.get(cx) {
             self.remove(index, window, cx);
             return;
         }

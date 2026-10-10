@@ -8,6 +8,7 @@ use super::SourceControl;
 use super::changes::ChangeGroup;
 use super::keymap::Commit;
 use crate::plugins::git::repo as git;
+use crate::plugins::git::settings::{NOTHING_STAGED, NothingStaged};
 
 impl SourceControl {
     pub(super) fn commit(&mut self, _: &Commit, window: &mut Window, cx: &mut Context<Self>) {
@@ -29,7 +30,17 @@ impl SourceControl {
             window.push_notification(Notification::info("There are no changes to commit."), cx);
             return;
         }
-        self.offer_to_commit_everything(message, window, cx);
+        match NOTHING_STAGED.get(cx) {
+            NothingStaged::Ask => self.offer_to_commit_everything(message, window, cx),
+            NothingStaged::StageAll => {
+                let paths = self.changes.paths(ChangeGroup::Unstaged);
+                self.start_commit(message, paths, window, cx);
+            }
+            NothingStaged::DoNothing => window.push_notification(
+                Notification::info("There are no staged changes to commit."),
+                cx,
+            ),
+        }
     }
 
     fn offer_to_commit_everything(

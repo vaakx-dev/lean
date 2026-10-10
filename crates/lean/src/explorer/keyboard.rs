@@ -2,6 +2,7 @@ use gpui_kit::{App, Context, KeyBinding, ScrollStrategy, Window, actions};
 
 use super::file_operations::{DeleteSelected, RenameSelected};
 use super::{Explorer, VisibleEntry};
+use crate::app::keymap;
 use crate::plugins::PanelEvent;
 
 actions!(
@@ -20,18 +21,21 @@ pub(super) const NOT_EDITING_CONTEXT: &str = "not_editing";
 const NAVIGATION_CONTEXT: &str = "Explorer && not_editing";
 
 pub(crate) fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("down", SelectNext, Some(NAVIGATION_CONTEXT)),
-        KeyBinding::new("up", SelectPrevious, Some(NAVIGATION_CONTEXT)),
-        KeyBinding::new("right", ExpandSelected, Some(NAVIGATION_CONTEXT)),
-        KeyBinding::new("left", CollapseSelected, Some(NAVIGATION_CONTEXT)),
-        KeyBinding::new("space", OpenSelected, Some(NAVIGATION_CONTEXT)),
-        KeyBinding::new("enter", OpenSelected, Some(NAVIGATION_CONTEXT)),
-        KeyBinding::new("f2", RenameSelected, Some(NAVIGATION_CONTEXT)),
-        KeyBinding::new("delete", DeleteSelected, Some(NAVIGATION_CONTEXT)),
-        #[cfg(target_os = "macos")]
-        KeyBinding::new("cmd-backspace", DeleteSelected, Some(NAVIGATION_CONTEXT)),
-    ]);
+    keymap::bind_defaults(
+        cx,
+        [
+            KeyBinding::new("down", SelectNext, Some(NAVIGATION_CONTEXT)),
+            KeyBinding::new("up", SelectPrevious, Some(NAVIGATION_CONTEXT)),
+            KeyBinding::new("right", ExpandSelected, Some(NAVIGATION_CONTEXT)),
+            KeyBinding::new("left", CollapseSelected, Some(NAVIGATION_CONTEXT)),
+            KeyBinding::new("space", OpenSelected, Some(NAVIGATION_CONTEXT)),
+            KeyBinding::new("enter", OpenSelected, Some(NAVIGATION_CONTEXT)),
+            KeyBinding::new("f2", RenameSelected, Some(NAVIGATION_CONTEXT)),
+            KeyBinding::new("delete", DeleteSelected, Some(NAVIGATION_CONTEXT)),
+            #[cfg(target_os = "macos")]
+            KeyBinding::new("cmd-backspace", DeleteSelected, Some(NAVIGATION_CONTEXT)),
+        ],
+    );
 }
 
 impl Explorer {
@@ -95,9 +99,11 @@ impl Explorer {
             self.toggle_folder(path, cx);
             return;
         }
-        let parent_index = path
-            .parent()
-            .and_then(|parent| self.visible.iter().position(|entry| entry.path == parent));
+        let parent_index = path.ancestors().skip(1).find_map(|ancestor| {
+            self.visible
+                .iter()
+                .position(|entry| !entry.is_draft && entry.path == ancestor)
+        });
         if let Some(parent_index) = parent_index {
             self.select_index(parent_index, cx);
         }

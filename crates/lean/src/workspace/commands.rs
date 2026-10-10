@@ -2,13 +2,15 @@ use gpui_kit::component::WindowExt as _;
 use gpui_kit::*;
 
 use super::Workspace;
+use super::shortcuts::bind_shortcuts;
 use crate::app::actions::{
-    About, CloseActiveEditor, NextEditor, PreviousEditor, SaveActiveEditor, ShowPanel,
-    ToggleSidebar, ToggleTerminal,
+    About, CloseActiveEditor, NextEditor, OpenSettings, PreviousEditor, SaveActiveEditor,
+    ShowPanel, ToggleSidebar, ToggleTerminal,
 };
+use crate::settings;
 
 pub(super) fn bind_commands(element: Stateful<Div>, cx: &Context<Workspace>) -> Stateful<Div> {
-    element
+    bind_shortcuts(element, cx)
         .on_action(cx.listener(Workspace::open_folder))
         .on_action(cx.listener(Workspace::open_recent))
         .on_action(cx.listener(Workspace::open_recent_project))
@@ -20,6 +22,7 @@ pub(super) fn bind_commands(element: Stateful<Div>, cx: &Context<Workspace>) -> 
         .on_action(cx.listener(Workspace::toggle_sidebar))
         .on_action(cx.listener(Workspace::toggle_terminal))
         .on_action(cx.listener(Workspace::show_panel_action))
+        .on_action(cx.listener(Workspace::open_settings))
         .on_action(cx.listener(Workspace::about))
 }
 
@@ -62,8 +65,7 @@ impl Workspace {
         if self.sidebar_visible {
             self.hide_sidebar(window, cx);
         } else {
-            self.sidebar_visible = true;
-            cx.notify();
+            self.show_sidebar(window, cx);
         }
     }
 
@@ -82,6 +84,15 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.show_panel(action.id, window, cx);
+    }
+
+    pub(super) fn open_settings(
+        &mut self,
+        _: &OpenSettings,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        settings::open_settings(&self.context.editor_area, window, cx);
     }
 
     fn about(&mut self, _: &About, window: &mut Window, cx: &mut Context<Self>) {

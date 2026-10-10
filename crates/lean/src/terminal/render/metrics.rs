@@ -3,12 +3,7 @@ use gpui_kit::{Pixels, Point, Size, Window, point};
 use super::appearance::TerminalAppearance;
 use crate::terminal::session::GridSize;
 
-const LINE_HEIGHT_RATIO: f32 = 1.3;
 const FALLBACK_WIDTH_RATIO: f32 = 0.6;
-
-pub(crate) fn line_height(font_size: Pixels) -> Pixels {
-    (font_size * LINE_HEIGHT_RATIO).round()
-}
 
 pub(crate) struct CellMetrics {
     pub(crate) cell_width: Pixels,
@@ -27,7 +22,7 @@ impl CellMetrics {
             });
         Self {
             cell_width,
-            line_height: line_height(appearance.font_size),
+            line_height: (appearance.font_size * appearance.line_height).round(),
         }
     }
 

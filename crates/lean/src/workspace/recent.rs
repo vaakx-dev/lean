@@ -64,7 +64,7 @@ impl Workspace {
         self.switch_project(path, window, cx);
     }
 
-    fn refresh_app_menus(&self, cx: &mut Context<Self>) {
+    pub(super) fn refresh_app_menus(&self, cx: &mut Context<Self>) {
         app::set_menus(cx);
         self.app_menu_bar
             .update(cx, |menu_bar, cx| menu_bar.reload(cx));

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{Context, ScrollStrategy, SharedString, Window};
+use gpui_kit::{Context, SharedString, Window};
 
 use super::{Explorer, VisibleEntry};
 use crate::app::actions::{CollapseAllFolders, RefreshExplorer};
@@ -21,9 +21,12 @@ impl Explorer {
         if self.children.contains_key(&path) {
             self.rebuild_visible();
             cx.notify();
+            self.unfold_single_child(&path, cx);
             if self.project.read(cx).watches_folder(&path) {
                 return;
             }
+        } else if self.options.compact_folders {
+            self.unfolding.insert(path.clone());
         }
         self.load_directory(path, cx);
     }
@@ -56,20 +59,9 @@ impl Explorer {
         cx: &mut Context<Self>,
     ) {
         self.expanded.clear();
+        self.unfolding.clear();
         self.rebuild_visible();
         cx.notify();
-    }
-
-    pub(super) fn reveal(&mut self, path: PathBuf) {
-        let index = self
-            .visible
-            .iter()
-            .position(|entry| !entry.is_draft && entry.path == path);
-        if let Some(index) = index {
-            self.scroll_handle
-                .scroll_to_item(index, ScrollStrategy::Nearest);
-        }
-        self.selected = Some(path);
     }
 
     pub(super) fn rebuild_visible(&mut self) {
@@ -80,41 +72,46 @@ impl Explorer {
         self.visible = visible;
     }
 
-    fn push_children(&self, path: &Path, depth: usize, visible: &mut Vec<VisibleEntry>) {
-        let children = self
-            .children
-            .get(path)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
+    pub(super) fn shown_children<'a>(
+        &'a self,
+        folder: &Path,
+    ) -> impl Iterator<Item = &'a DirectoryEntry> + use<'a> {
+        let options = &self.options;
+        self.children
+            .get(folder)
+            .into_iter()
+            .flatten()
+            .filter(move |entry| options.shows(entry))
+    }
+
+    fn push_children(&self, folder: &Path, depth: usize, visible: &mut Vec<VisibleEntry>) {
+        let children: Vec<&DirectoryEntry> = self.shown_children(folder).collect();
         let draft = self
-            .draft_in(path)
-            .map(|is_dir| (draft_position(children, is_dir), is_dir));
+            .draft_in(folder)
+            .map(|is_dir| (draft_position(&children, is_dir), is_dir));
         for (index, child) in children.iter().enumerate() {
             if let Some((position, is_dir)) = draft
                 && position == index
             {
-                visible.push(draft_entry(path, depth, is_dir));
+                visible.push(draft_entry(folder, depth, is_dir));
             }
-            visible.push(VisibleEntry {
-                path: child.path.clone(),
-                name: child.name.clone(),
-                depth,
-                is_dir: child.is_dir,
-                is_draft: false,
-            });
-            if child.is_dir && self.expanded.contains(&child.path) {
-                self.push_children(&child.path, depth + 1, visible);
+            let row = self.entry_row(child, depth);
+            let opened =
+                (row.is_dir && self.expanded.contains(&row.path)).then(|| row.path.clone());
+            visible.push(row);
+            if let Some(opened) = opened {
+                self.push_children(&opened, depth + 1, visible);
             }
         }
         if let Some((position, is_dir)) = draft
             && position == children.len()
         {
-            visible.push(draft_entry(path, depth, is_dir));
+            visible.push(draft_entry(folder, depth, is_dir));
         }
     }
 }
 
-fn draft_position(children: &[DirectoryEntry], is_dir: bool) -> usize {
+fn draft_position(children: &[&DirectoryEntry], is_dir: bool) -> usize {
     if is_dir {
         0
     } else {
@@ -129,5 +126,6 @@ fn draft_entry(folder: &Path, depth: usize, is_dir: bool) -> VisibleEntry {
         depth,
         is_dir,
         is_draft: true,
+        is_ignored: false,
     }
 }

@@ -4,16 +4,19 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::Workspace;
-use crate::app::actions::{ToggleSidebar, ToggleTerminal};
+use super::settings::TITLE_BAR_SEARCH_BOX;
+use crate::app::actions::{OpenRecent, ToggleSidebar, ToggleTerminal};
 
 const SEARCH_BOX_MAX_WIDTH: Pixels = px(560.);
 const SEARCH_BOX_MIN_WINDOW_WIDTH: Pixels = px(760.);
+const SEARCH_PANEL_ID: &str = "search";
 
 impl Workspace {
     pub(super) fn render_title_bar(&self, window: &Window, cx: &Context<Self>) -> TitleBar {
         let theme = cx.theme();
         let project_name = self.context.project.read(cx).name().clone();
-        let has_room_for_search = window.viewport_size().width >= SEARCH_BOX_MIN_WINDOW_WIDTH;
+        let shows_search_box = TITLE_BAR_SEARCH_BOX.get(cx)
+            && window.viewport_size().width >= SEARCH_BOX_MIN_WINDOW_WIDTH;
         TitleBar::new()
             .on_close_window(Self::close_window_handler(cx))
             .bg(theme.background)
@@ -33,8 +36,14 @@ impl Workspace {
                     .min_w_0()
                     .max_w(SEARCH_BOX_MAX_WIDTH)
                     .px_2()
-                    .when(has_room_for_search, |center| {
-                        center.child(search_box(project_name, theme))
+                    .when(shows_search_box, |center| {
+                        center.child(
+                            search_box(project_name, self.search_box_tooltip(), theme).on_click(
+                                cx.listener(|workspace, _, window, cx| {
+                                    workspace.activate_search(window, cx)
+                                }),
+                            ),
+                        )
                     }),
             )
             .child(
@@ -50,7 +59,7 @@ impl Workspace {
                         } else {
                             "icons/panel-left-open.svg"
                         },
-                        "Toggle Sidebar (Ctrl+B)",
+                        "Toggle Sidebar",
                         self.shows_sidebar(),
                         ToggleSidebar,
                     ))
@@ -61,17 +70,38 @@ impl Workspace {
                         } else {
                             "icons/panel-bottom-open.svg"
                         },
-                        "Toggle Terminal (Ctrl+`)",
+                        "Toggle Terminal",
                         self.terminal_visible,
                         ToggleTerminal,
                     )),
             )
     }
+
+    fn has_search_panel(&self) -> bool {
+        self.panel_index(SEARCH_PANEL_ID).is_some()
+    }
+
+    fn search_box_tooltip(&self) -> &'static str {
+        if self.has_search_panel() {
+            "Search in Files"
+        } else {
+            "Open Recent Folder"
+        }
+    }
+
+    fn activate_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.has_search_panel() {
+            self.show_panel(SEARCH_PANEL_ID, window, cx);
+        } else {
+            self.open_recent(&OpenRecent, window, cx);
+        }
+    }
 }
 
-fn search_box(project_name: SharedString, theme: &Theme) -> Button {
+fn search_box(project_name: SharedString, tooltip: &'static str, theme: &Theme) -> Button {
     Button::new("search-box")
         .ghost()
+        .tooltip(tooltip)
         .w_full()
         .min_w_0()
         .h(px(26.))
@@ -107,7 +137,7 @@ fn layout_toggle(
         .ghost()
         .small()
         .icon(Icon::empty().path(icon))
-        .tooltip(tooltip)
+        .tooltip_with_action(tooltip, &action, None)
         .toggled(is_on)
         .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
 }

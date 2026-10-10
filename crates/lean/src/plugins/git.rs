@@ -1,6 +1,7 @@
 mod diff;
 mod git_project;
 mod repo;
+pub(crate) mod settings;
 mod source_control;
 mod status;
 

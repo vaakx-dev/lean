@@ -46,6 +46,13 @@ impl CellStyle {
         }
     }
 
+    pub(crate) fn selected(self, palette: &Palette) -> Self {
+        Self {
+            background: palette.selection(),
+            ..self
+        }
+    }
+
     pub(crate) fn is_decorated(&self) -> bool {
         self.underline || self.strikethrough
     }

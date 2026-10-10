@@ -13,7 +13,9 @@ use anyhow::Result;
 use gpui_kit::*;
 
 use super::formats::{detect_format, raster_format};
+use super::settings::{DEFAULT_ZOOM, DefaultZoom, UPSCALE_SMALL};
 use crate::plugins::{AnyFileView, FileView, FileViewEvent, FileViewer, OpenRequest};
+use crate::settings::Settings;
 use navigation::Drag;
 use zoom::Zoom;
 
@@ -46,11 +48,13 @@ pub(super) struct ImageViewer {
     image: Arc<Image>,
     decoded: Decoded,
     zoom: Zoom,
+    upscale_small: bool,
     drag: Option<Drag>,
     scroll_handle: ScrollHandle,
     focus_handle: FocusHandle,
     _decoding: Task<()>,
     _release: Subscription,
+    _settings: Subscription,
 }
 
 impl EventEmitter<FileViewEvent> for ImageViewer {}
@@ -63,16 +67,26 @@ impl ImageViewer {
                 cx.drop_image(image, None);
             }
         });
+        let settings = cx.observe_global::<Settings>(|viewer, cx| {
+            viewer.upscale_small = UPSCALE_SMALL.get(cx);
+            cx.notify();
+        });
+        let zoom = match DEFAULT_ZOOM.get(cx) {
+            DefaultZoom::Fit => Zoom::Fit,
+            DefaultZoom::ActualSize => Zoom::Scale(1.),
+        };
         let mut viewer = Self {
             path,
             image,
             decoded: Decoded::Loading,
-            zoom: Zoom::Fit,
+            zoom,
+            upscale_small: UPSCALE_SMALL.get(cx),
             drag: None,
             scroll_handle: ScrollHandle::new(),
             focus_handle: cx.focus_handle(),
             _decoding: Task::ready(()),
             _release: release,
+            _settings: settings,
         };
         viewer.decode(cx);
         viewer

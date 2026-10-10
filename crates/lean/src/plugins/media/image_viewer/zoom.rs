@@ -13,10 +13,15 @@ pub(super) enum Zoom {
 }
 
 impl Zoom {
-    pub(super) fn scale(self, image: Size<DevicePixels>, viewport: Size<Pixels>) -> Option<f32> {
+    pub(super) fn scale(
+        self,
+        image: Size<DevicePixels>,
+        viewport: Size<Pixels>,
+        upscale: bool,
+    ) -> Option<f32> {
         match self {
             Zoom::Scale(scale) => Some(scale),
-            Zoom::Fit => fit_scale(image, viewport),
+            Zoom::Fit => fit_scale(image, viewport, upscale),
         }
     }
 }
@@ -54,12 +59,12 @@ fn image_origin(viewport: f32, length: f32) -> f32 {
     ((length + 2. * PADDING.as_f32()).max(viewport) - length) / 2.
 }
 
-fn fit_scale(image: Size<DevicePixels>, viewport: Size<Pixels>) -> Option<f32> {
+fn fit_scale(image: Size<DevicePixels>, viewport: Size<Pixels>, upscale: bool) -> Option<f32> {
     let width = (viewport.width - PADDING * 2.).as_f32();
     let height = (viewport.height - PADDING * 2.).as_f32();
     if width <= 0. || height <= 0. || image.width.0 <= 0 || image.height.0 <= 0 {
         return None;
     }
     let scale = (width / image.width.0 as f32).min(height / image.height.0 as f32);
-    Some(scale.min(1.))
+    Some(if upscale { scale } else { scale.min(1.) })
 }

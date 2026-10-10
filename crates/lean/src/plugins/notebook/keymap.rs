@@ -3,6 +3,7 @@ use gpui_kit::*;
 
 use super::Notebook;
 use super::document::CellKind;
+use crate::app::keymap;
 
 actions!(
     notebook,
@@ -29,26 +30,29 @@ const EDITING_CONTEXT: &str = "Notebook > Input";
 const COMMAND_CONTEXT: &str = "Notebook && !Input";
 
 pub(crate) fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("shift-enter", RunCellAndAdvance, Some(EDITING_CONTEXT)),
-        KeyBinding::new("ctrl-enter", RunCell, Some(EDITING_CONTEXT)),
-        KeyBinding::new("alt-enter", RunCellAndInsert, Some(EDITING_CONTEXT)),
-        KeyBinding::new("shift-enter", RunCellAndAdvance, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("ctrl-enter", RunCell, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("alt-enter", RunCellAndInsert, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("up", SelectPreviousCell, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("k", SelectPreviousCell, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("down", SelectNextCell, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("j", SelectNextCell, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("enter", EditCell, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("a", InsertCellAbove, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("b", InsertCellBelow, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("d d", DeleteCell, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("y", ChangeCellToCode, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("m", ChangeCellToMarkdown, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("i i", InterruptKernel, Some(COMMAND_CONTEXT)),
-        KeyBinding::new("0 0", RestartKernel, Some(COMMAND_CONTEXT)),
-    ]);
+    keymap::bind_defaults(
+        cx,
+        [
+            KeyBinding::new("shift-enter", RunCellAndAdvance, Some(EDITING_CONTEXT)),
+            KeyBinding::new("ctrl-enter", RunCell, Some(EDITING_CONTEXT)),
+            KeyBinding::new("alt-enter", RunCellAndInsert, Some(EDITING_CONTEXT)),
+            KeyBinding::new("shift-enter", RunCellAndAdvance, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("ctrl-enter", RunCell, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("alt-enter", RunCellAndInsert, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("up", SelectPreviousCell, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("k", SelectPreviousCell, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("down", SelectNextCell, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("j", SelectNextCell, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("enter", EditCell, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("a", InsertCellAbove, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("b", InsertCellBelow, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("d d", DeleteCell, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("y", ChangeCellToCode, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("m", ChangeCellToMarkdown, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("i i", InterruptKernel, Some(COMMAND_CONTEXT)),
+            KeyBinding::new("0 0", RestartKernel, Some(COMMAND_CONTEXT)),
+        ],
+    );
 }
 
 pub(super) fn bind_actions(element: Stateful<Div>, cx: &Context<Notebook>) -> Stateful<Div> {

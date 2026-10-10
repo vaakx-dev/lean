@@ -9,20 +9,19 @@ use crate::explorer::Explorer;
 const DELETE_PERMANENTLY_ANSWER: usize = 0;
 
 impl Explorer {
-    pub(super) fn offer_permanent_delete(
+    pub(super) fn confirm_permanent_delete(
         &mut self,
         path: PathBuf,
         name: SharedString,
-        reason: String,
+        message: String,
+        detail: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let question =
-            format!("Do you want to permanently delete \"{name}\"? This can't be undone.");
         let answer = window.prompt(
             PromptLevel::Warning,
-            &reason,
-            Some(&question),
+            &message,
+            Some(&detail),
             &["Delete Permanently", "Cancel"],
             cx,
         );
@@ -40,7 +39,7 @@ impl Explorer {
         .detach();
     }
 
-    fn delete_permanently(
+    pub(super) fn delete_permanently(
         &mut self,
         path: PathBuf,
         name: SharedString,

@@ -14,6 +14,7 @@ pub(super) struct RawEvent {
     pub(super) structural: bool,
     pub(super) metadata: bool,
     pub(super) rescan: bool,
+    pub(super) retry: bool,
     pub(super) received: Instant,
 }
 
@@ -26,6 +27,13 @@ impl RawEvent {
         }
     }
 
+    pub(super) fn retry() -> Self {
+        Self {
+            retry: true,
+            ..Self::empty()
+        }
+    }
+
     pub(super) fn empty() -> Self {
         Self {
             paths: Vec::new(),
@@ -33,11 +41,13 @@ impl RawEvent {
             structural: false,
             metadata: false,
             rescan: false,
+            retry: false,
             received: Instant::now(),
         }
     }
 }
 
+#[derive(Clone)]
 pub(super) struct EventFilter {
     pub(super) metadata: SharedMetadata,
     pub(super) skipped: SkippedFolders,

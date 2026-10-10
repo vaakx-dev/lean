@@ -1,32 +1,62 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, Once, PoisonError};
 
-use anyhow::Result;
+use gpui_kit::App;
 
-const APP_DIR: &str = "lean";
+use crate::storage::{QueuedWriter, state_file};
+
 const FILE_NAME: &str = "toolchains.json";
 
-pub(super) type Choices = HashMap<String, Option<PathBuf>>;
+pub(super) type Choices = BTreeMap<String, Option<PathBuf>>;
 type SavedChoices = BTreeMap<PathBuf, Choices>;
 
+static SAVED: Mutex<Option<SavedChoices>> = Mutex::new(None);
+static WRITER: QueuedWriter = QueuedWriter::new();
+static FLUSH_ON_QUIT: Once = Once::new();
+
 pub(super) fn load(project_root: &Path) -> Choices {
-    read_all().remove(project_root).unwrap_or_default()
+    with_saved(|saved| saved.get(project_root).cloned().unwrap_or_default())
 }
 
-pub(super) fn save(project_root: &Path, choices: &Choices) {
-    let Some(file) = file_path() else {
+pub(super) fn save(project_root: &Path, language: &str, prefix: Option<PathBuf>, cx: &App) {
+    let Some(file) = state_file(FILE_NAME) else {
         return;
     };
-    let mut saved = read_all();
-    saved.insert(project_root.to_path_buf(), choices.clone());
-    if let Err(error) = write(&file, &saved) {
-        log::warn!("failed to save {}: {error:#}", file.display());
+    let snapshot = with_saved(|saved| {
+        saved
+            .entry(project_root.to_path_buf())
+            .or_default()
+            .insert(language.to_owned(), prefix);
+        saved.clone()
+    });
+    FLUSH_ON_QUIT.call_once(|| {
+        cx.on_app_quit(|_| {
+            flush();
+            async {}
+        })
+        .detach();
+    });
+    WRITER.save(file, snapshot, cx);
+}
+
+fn flush() {
+    if WRITER.is_idle() {
+        return;
+    }
+    if let Some(file) = state_file(FILE_NAME) {
+        with_saved(|saved| WRITER.save_now(&file, &*saved));
     }
 }
 
-fn read_all() -> SavedChoices {
-    let Some(file) = file_path() else {
+fn with_saved<R>(use_saved: impl FnOnce(&mut SavedChoices) -> R) -> R {
+    let mut saved = SAVED.lock().unwrap_or_else(PoisonError::into_inner);
+    use_saved(saved.get_or_insert_with(read_file))
+}
+
+fn read_file() -> SavedChoices {
+    let Some(file) = state_file(FILE_NAME) else {
         return SavedChoices::new();
     };
     let contents = match std::fs::read_to_string(&file) {
@@ -41,20 +71,4 @@ fn read_all() -> SavedChoices {
         log::warn!("failed to parse {}: {error}", file.display());
         SavedChoices::new()
     })
-}
-
-fn write(file: &Path, saved: &SavedChoices) -> Result<()> {
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(file, serde_json::to_string_pretty(saved)?)?;
-    Ok(())
-}
-
-fn file_path() -> Option<PathBuf> {
-    let dir = dirs::state_dir().or_else(dirs::data_local_dir);
-    if dir.is_none() {
-        log::warn!("no state folder found; toolchain choices will not be saved");
-    }
-    dir.map(|dir| dir.join(APP_DIR).join(FILE_NAME))
 }

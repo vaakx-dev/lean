@@ -1,6 +1,7 @@
 mod icon;
 mod language;
 mod name;
+pub(crate) mod settings;
 mod size;
 
 pub(crate) use icon::file_icon;

@@ -5,6 +5,7 @@ use gpui_kit::*;
 use super::SourceControl;
 use super::changes::{ChangedFile, paths_of};
 use crate::plugins::git::repo::FileStatus;
+use crate::plugins::git::settings::CONFIRM_DISCARD;
 
 impl SourceControl {
     pub(super) fn confirm_discard(
@@ -14,6 +15,10 @@ impl SourceControl {
         cx: &mut Context<Self>,
     ) {
         if files.is_empty() {
+            return;
+        }
+        if !CONFIRM_DISCARD.get(cx) {
+            self.discard(paths_of(&files), window, cx);
             return;
         }
         let (message, confirm_label) = discard_question(&files);

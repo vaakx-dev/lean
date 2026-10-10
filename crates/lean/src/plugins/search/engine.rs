@@ -11,45 +11,57 @@ use futures::channel::mpsc::UnboundedSender;
 use gpui_kit::SharedString;
 use ignore::overrides::Override;
 
+use super::config::SearchConfig;
 use super::query::SearchQuery;
 use super::results::{FileResult, SearchBatch};
 use matcher::Matcher;
 
-pub(super) const MAX_MATCHES: usize = 2000;
 const FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 
 pub(super) struct SearchJob {
     root: PathBuf,
     matcher: Matcher,
     filter: Override,
+    config: SearchConfig,
 }
 
-pub(super) fn prepare(root: PathBuf, query: &SearchQuery) -> Result<SearchJob, SharedString> {
-    let matcher = Matcher::new(&query.pattern, query.options)?;
-    let filter = path_filter::build(&root, &query.include, &query.exclude)?;
+pub(super) fn prepare(root: PathBuf, query: SearchQuery) -> Result<SearchJob, SharedString> {
+    let matcher = Matcher::new(&query.pattern, query.options, query.config.smart_case)?;
+    let filter = path_filter::build(&root, &query.include, &query.exclude, &query.config.exclude)?;
     Ok(SearchJob {
         root,
         matcher,
         filter,
+        config: query.config,
     })
 }
 
 pub(super) fn run(job: SearchJob, sender: UnboundedSender<SearchBatch>) {
     let mut pending: Vec<FileResult> = Vec::new();
-    let mut remaining = MAX_MATCHES;
+    let mut remaining = job.config.max_results;
+    let mut truncated = false;
     let mut last_flush: Option<Instant> = None;
-    for path in walk::files(&job.root, job.filter) {
+    for path in walk::files(&job.root, job.filter, &job.config) {
         if sender.is_closed() {
             return;
         }
-        if let Some(file) = file_scan::scan(&job.root, path, &job.matcher, remaining) {
-            remaining = remaining.saturating_sub(file.match_count);
-            pending.push(file);
-        }
         if remaining == 0 {
+            if file_scan::contains_match(&path, &job.matcher) {
+                truncated = true;
+                break;
+            }
+            continue;
+        }
+        if let Some(scanned) = file_scan::scan(&job.root, path, &job.matcher, remaining) {
+            remaining -= scanned.file.match_count;
+            truncated = scanned.overflow;
+            pending.push(scanned.file);
+        }
+        if truncated {
             break;
         }
-        let due = last_flush.is_none_or(|flushed| flushed.elapsed() >= FLUSH_INTERVAL);
+        let due =
+            remaining == 0 || last_flush.is_none_or(|flushed| flushed.elapsed() >= FLUSH_INTERVAL);
         if !pending.is_empty() && due {
             let batch = SearchBatch {
                 files: std::mem::take(&mut pending),
@@ -63,7 +75,7 @@ pub(super) fn run(job: SearchJob, sender: UnboundedSender<SearchBatch>) {
     }
     let batch = SearchBatch {
         files: pending,
-        truncated: remaining == 0,
+        truncated,
     };
     sender.unbounded_send(batch).ok();
 }

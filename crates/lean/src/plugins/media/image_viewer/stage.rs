@@ -9,16 +9,22 @@ use super::keymap::{KEY_CONTEXT, bind_actions};
 use super::zoom::{PADDING, Zoom, displayed_length};
 use super::{Decoded, ImageViewer};
 use crate::plugins::media::picture::{Fit, picture};
+use crate::plugins::media::settings::{IMAGE_TOOLBAR, WHEEL, WheelAction};
 
 impl ImageViewer {
     fn render_stage(&self, image: &Arc<RenderImage>, cx: &Context<Self>) -> Stateful<Div> {
         let pannable = self.can_pan();
         let dragging = self.is_dragging();
+        let fit = if self.upscale_small {
+            Fit::Contain
+        } else {
+            Fit::ScaleDown
+        };
         let content = match self.zoom {
             Zoom::Fit => div()
                 .size_full()
                 .p(PADDING)
-                .child(picture("image", image, Fit::ScaleDown, cx).size_full()),
+                .child(picture("image", image, fit, cx).size_full()),
             Zoom::Scale(scale) => {
                 let size = image.size(0);
                 let width = displayed_length(size.width, scale);
@@ -45,7 +51,7 @@ impl ImageViewer {
             .when(pannable && !dragging, |content| content.cursor_grab())
             .when(dragging, |content| content.cursor_grabbing())
             .on_scroll_wheel(cx.listener(|viewer, event: &ScrollWheelEvent, window, cx| {
-                if event.modifiers.secondary() {
+                if wheel_zooms(WHEEL.get(cx), event.modifiers.secondary()) {
                     cx.stop_propagation();
                     viewer.zoom_with_wheel(event, window, cx);
                 }
@@ -97,8 +103,18 @@ impl Render for ImageViewer {
             Decoded::Ready(image) => root
                 .child(self.render_stage(image, cx))
                 .scrollbar(&self.scroll_handle, ScrollbarAxis::Both)
-                .child(self.render_toolbar(cx)),
+                .when(IMAGE_TOOLBAR.get(cx), |root| {
+                    root.child(self.render_toolbar(cx))
+                }),
         }
+    }
+}
+
+fn wheel_zooms(action: WheelAction, secondary: bool) -> bool {
+    match action {
+        WheelAction::ZoomWithCtrl => secondary,
+        WheelAction::Zoom => true,
+        WheelAction::Pan => false,
     }
 }
 

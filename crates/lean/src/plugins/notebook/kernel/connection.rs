@@ -20,13 +20,8 @@ use super::stderr::KernelStderr;
 use super::{Command, KernelEvent, KernelSpec};
 
 #[cfg(windows)]
-const PYTHON: &str = "python";
-#[cfg(not(windows))]
-const PYTHON: &str = "python3";
-#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const NUDGE_INTERVAL: Duration = Duration::from_millis(500);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -86,7 +81,7 @@ async fn drive(
         status = child.wait() => return Err(stderr.exit_error(status?).await),
     };
     let mut nudge = tokio::time::interval(NUDGE_INTERVAL);
-    let startup = tokio::time::sleep(STARTUP_TIMEOUT);
+    let startup = tokio::time::sleep(spec.startup_timeout);
     tokio::pin!(startup);
     let mut ready = false;
     loop {
@@ -106,7 +101,10 @@ async fn drive(
                 continue;
             },
             _ = nudge.tick(), if !ready => Step::Nudge,
-            _ = &mut startup, if !ready => bail!("the kernel did not start within a minute"),
+            _ = &mut startup, if !ready => bail!(
+                "the kernel did not start within {} seconds",
+                spec.startup_timeout.as_secs()
+            ),
             line = stderr.next_line(), if stderr.is_open() => Step::Stderr(line?),
             status = child.wait() => Step::Exited(status?),
         };
@@ -137,7 +135,7 @@ async fn drive(
 }
 
 fn spawn_kernel(spec: &KernelSpec, connection_file: &Path) -> Result<Child> {
-    let mut process = Process::new(PYTHON);
+    let mut process = Process::new(&spec.program);
     process
         .args(["-m", "ipykernel_launcher", "-f"])
         .arg(connection_file)
@@ -153,7 +151,7 @@ fn spawn_kernel(spec: &KernelSpec, connection_file: &Path) -> Result<Child> {
     process.creation_flags(CREATE_NO_WINDOW);
     process
         .spawn()
-        .with_context(|| format!("failed to start {PYTHON}"))
+        .with_context(|| format!("failed to start {}", spec.program))
 }
 
 async fn connect(info: &ConnectionInfo, session: &str) -> Result<Sockets> {

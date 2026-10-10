@@ -3,9 +3,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use gpui_kit::{Context, Task, Window};
+use gpui_kit::{App, Context, Task, Window};
 
 use super::Explorer;
+use super::sorting::sort_entries;
+use crate::files::file_name;
 use crate::project::DirectoryEntry;
 
 #[derive(Default)]
@@ -42,6 +44,10 @@ impl FolderLoads {
 
     fn forget_under(&mut self, path: &Path) {
         self.pending.retain(|folder, _| !folder.starts_with(path));
+    }
+
+    pub(super) fn is_idle(&self) -> bool {
+        self.pending.is_empty()
     }
 }
 
@@ -112,35 +118,49 @@ impl Explorer {
             return false;
         };
         let vanished = match result {
-            Ok(entries) => self.replace_children(path, entries),
+            Ok(entries) => self.replace_children(path.clone(), entries),
             Err(error) => {
-                self.handle_load_error(&path, &error);
+                self.handle_load_error(&path, &error, cx);
                 Vec::new()
             }
         };
         self.rebuild_visible();
         self.reselect_if_vanished(&vanished);
         if let Some(reveal) = load.reveal {
-            self.reveal(reveal);
+            self.selected = Some(reveal.clone());
+            self.pending_reveal = Some(reveal);
         }
+        self.scroll_to_pending_reveal();
         cx.notify();
+        if self.unfolding.remove(&path) {
+            self.unfold_single_child(&path, cx);
+        }
         !vanished.is_empty()
     }
 
-    fn handle_load_error(&mut self, path: &Path, error: &anyhow::Error) {
+    fn handle_load_error(&mut self, path: &Path, error: &anyhow::Error, cx: &mut App) {
+        self.unfolding.remove(path);
         let is_missing = error
             .downcast_ref::<io::Error>()
             .is_some_and(|error| error.kind() == io::ErrorKind::NotFound);
+        self.forget_subtree(path);
         if is_missing {
             log::debug!("{} no longer exists", path.display());
-            self.forget_subtree(path);
         } else {
             log::warn!("failed to read {}: {error:#}", path.display());
-            self.expanded.remove(path);
+            self.show_warning(
+                format!("Can't open the folder \"{}\": {error}", file_name(path)),
+                cx,
+            );
         }
     }
 
-    fn replace_children(&mut self, folder: PathBuf, entries: Vec<DirectoryEntry>) -> Vec<PathBuf> {
+    fn replace_children(
+        &mut self,
+        folder: PathBuf,
+        mut entries: Vec<DirectoryEntry>,
+    ) -> Vec<PathBuf> {
+        sort_entries(&mut entries, self.options.sorting);
         let current: HashMap<&Path, bool> = entries
             .iter()
             .map(|entry| (entry.path.as_path(), entry.is_dir))

@@ -11,7 +11,8 @@ pub(super) struct Drag {
 impl ImageViewer {
     pub(super) fn current_scale(&self) -> Option<f32> {
         let image = self.image_size()?;
-        self.zoom.scale(image, self.scroll_handle.bounds().size)
+        self.zoom
+            .scale(image, self.scroll_handle.bounds().size, self.upscale_small)
     }
 
     pub(super) fn zoom_in(&mut self, cx: &mut Context<Self>) {

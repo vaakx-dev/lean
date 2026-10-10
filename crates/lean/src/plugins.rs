@@ -1,20 +1,20 @@
 #[cfg(feature = "browser")]
-mod browser;
+pub(crate) mod browser;
 mod builtin;
 #[cfg(feature = "git")]
-mod git;
+pub(crate) mod git;
 mod host;
-mod manager;
 #[cfg(feature = "media")]
-mod media;
+pub(crate) mod media;
 #[cfg(feature = "notebook")]
-mod notebook;
+pub(crate) mod notebook;
 #[cfg(feature = "search")]
-mod search;
+pub(crate) mod search;
+pub(crate) mod settings;
 
 use gpui_kit::App;
 
-use crate::settings;
+use crate::settings::plugin_enabled;
 use host::Registry;
 
 pub(crate) use gpui_kit::component::input::GutterMarker;
@@ -23,7 +23,6 @@ pub(crate) use host::{
     FileViewEvent, FileViewer, OpenRequest, Panel, PanelEvent, PanelView, Plugin, PluginContext,
     Snapshot, StatusItem, WorkspaceContext, file_actions, panels, status_items, viewer_for,
 };
-pub(crate) use manager::open_plugin_manager;
 
 const PLUGINS: &[Plugin] = &[
     #[cfg(feature = "git")]
@@ -42,7 +41,7 @@ pub(crate) fn init(cx: &mut App) {
     let mut registry = Registry::default();
     builtin::register(&mut PluginContext::new(&mut registry));
     for plugin in PLUGINS {
-        if settings::plugin_enabled(plugin.id, cx) {
+        if plugin_enabled(plugin.id, cx) {
             (plugin.activate)(&mut PluginContext::new(&mut registry), cx);
             registry.mark_active(plugin.id);
         }

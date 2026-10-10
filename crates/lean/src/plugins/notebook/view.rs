@@ -4,6 +4,7 @@ use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use super::cell_options::cell_font;
 use super::document::CellKind;
 use super::keymap::{KEY_CONTEXT, bind_actions};
 use super::{KernelStatus, Notebook};
@@ -100,6 +101,7 @@ impl Notebook {
 
 impl Render for Notebook {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.cell_font = cell_font(cx);
         let cx: &Context<Self> = cx;
         let theme = cx.theme();
         let root = v_flex()

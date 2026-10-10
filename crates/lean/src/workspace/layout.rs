@@ -3,19 +3,21 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::commands::bind_commands;
+use super::settings::STATUS_BAR_VISIBLE;
 use super::sidebar_resize::track_sidebar_resize;
 use super::{GAP, Workspace};
 
 impl Workspace {
-    fn render_body(&self, cx: &Context<Self>) -> Div {
+    fn render_body(&self, show_status_bar: bool, window: &Window, cx: &Context<Self>) -> Div {
         h_flex()
             .flex_1()
             .min_h_0()
             .pt(GAP)
             .pr(GAP)
+            .when(!show_status_bar, |body| body.pb(GAP))
             .child(self.render_activity_bar(cx))
             .when(self.shows_sidebar(), |body| {
-                body.child(self.render_sidebar(cx))
+                body.child(self.render_sidebar(self.visible_sidebar_width(window), cx))
                     .child(self.render_resize_handle(cx))
             })
             .child(self.render_editor_column(cx))
@@ -52,6 +54,7 @@ impl Render for Workspace {
         let window: &Window = window;
         let cx: &Context<Self> = cx;
         let theme = cx.theme();
+        let show_status_bar = STATUS_BAR_VISIBLE.get(cx);
         let root = v_flex()
             .id("workspace")
             .key_context("Workspace")
@@ -62,7 +65,9 @@ impl Render for Workspace {
         bind_commands(root, cx)
             .when(self.resizing_sidebar, |root| track_sidebar_resize(root, cx))
             .child(self.render_title_bar(window, cx))
-            .child(self.render_body(cx))
-            .child(self.render_status_bar(cx))
+            .child(self.render_body(show_status_bar, window, cx))
+            .when(show_status_bar, |root| {
+                root.child(self.render_status_bar(cx))
+            })
     }
 }

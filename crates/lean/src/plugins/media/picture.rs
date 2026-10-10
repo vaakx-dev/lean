@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::checkerboard::checkerboard;
+use super::settings::{BACKGROUND, ImageBackground};
 
 #[derive(Clone, Copy)]
 pub(super) enum Fit {
@@ -25,9 +27,12 @@ pub(super) fn picture(
     fit: Fit,
     cx: &App,
 ) -> Div {
+    let checkered = BACKGROUND.get(cx) == ImageBackground::Checkerboard;
     div()
         .relative()
-        .child(checkerboard(image.size(0), fit, cx))
+        .when(checkered, |picture| {
+            picture.child(checkerboard(image.size(0), fit, cx))
+        })
         .child(
             img(image.clone())
                 .id(id)

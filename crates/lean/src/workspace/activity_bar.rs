@@ -5,13 +5,11 @@ use gpui_kit::*;
 
 use super::Workspace;
 use super::panels::SidebarPanel;
-use crate::plugins::open_plugin_manager;
 
 pub(super) const ACTIVITY_BAR_WIDTH: Pixels = px(52.);
 
 impl Workspace {
     pub(super) fn render_activity_bar(&self, cx: &Context<Self>) -> Div {
-        let theme = cx.theme();
         v_flex()
             .w(ACTIVITY_BAR_WIDTH)
             .flex_shrink_0()
@@ -27,10 +25,7 @@ impl Workspace {
                         .map(|(index, panel)| self.render_activity_item(index, panel, cx)),
                 ),
             )
-            .child(
-                activity_button("settings", "icons/settings.svg", "Plugins", theme)
-                    .on_click(|_, window, cx| open_plugin_manager(window, cx)),
-            )
+            .child(self.render_quick_settings(cx))
     }
 
     fn render_activity_item(

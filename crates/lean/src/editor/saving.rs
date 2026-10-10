@@ -1,23 +1,18 @@
+mod auto_save;
+mod conflict;
+mod format;
+mod hot_exit;
+mod services;
 mod snapshot;
+mod write;
 
-use std::fmt::Display;
-use std::io;
-use std::path::Path;
-
-use gpui_kit::component::WindowExt as _;
 use gpui_kit::*;
 
-use super::{EditorArea, EditorAreaEvent};
-use snapshot::{Written, write_snapshot};
+use super::EditorArea;
+use super::disk_state::{SaveInFlight, SaveOutcome};
+use crate::files::settings::SaveFormat;
 
-const OVERWRITE_ANSWER: usize = 0;
-const REVERT_ANSWER: usize = 1;
-
-struct SaveRequest {
-    id: u64,
-    version: u64,
-    on_saved: Option<Box<dyn FnOnce(&mut App)>>,
-}
+pub(super) use format::format_for_save;
 
 impl EditorArea {
     pub(crate) fn save_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -34,7 +29,7 @@ impl EditorArea {
         let ids: Vec<u64> = self
             .files
             .iter()
-            .filter(|file| file.dirty)
+            .filter(|file| file.dirty || file.disk.is_saving())
             .map(|file| file.id)
             .collect();
         cx.spawn_in(window, async move |area, cx| {
@@ -43,15 +38,7 @@ impl EditorArea {
                     area.index_of_id(id)
                         .map(|index| area.save(index, window, cx))
                 });
-                let saved = match save {
-                    Ok(Some(save)) => save.await,
-                    Ok(None) => true,
-                    Err(error) => {
-                        log::debug!("editor area dropped while saving all files: {error:#}");
-                        false
-                    }
-                };
-                if !saved {
+                if !settle(save, "saving all files").await {
                     return false;
                 }
             }
@@ -71,140 +58,67 @@ impl EditorArea {
         if !file.is_file() {
             return Task::ready(true);
         }
-        if file.disk.saving {
-            return Task::ready(false);
+        let id = file.id;
+        if let Some(in_flight) = file.disk.saving.clone() {
+            return self.save_after(id, in_flight, window, cx);
+        }
+        if !file.dirty && !file.deleted {
+            return Task::ready(true);
         }
         if file.disk.conflict {
             return self.resolve_conflict(index, window, cx);
         }
-        self.write(index, window, cx)
+        let write = self.write(index, true, SaveFormat::from_settings(cx), window, cx);
+        self.resolve_after_write(id, write, window, cx)
     }
 
-    fn resolve_conflict(
+    fn save_after(
         &mut self,
-        index: usize,
+        id: u64,
+        in_flight: SaveInFlight,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Task<bool> {
-        let Some(file) = self.files.get(index) else {
-            return Task::ready(false);
-        };
-        let id = file.id;
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &format!("{} has changed on disk.", file.name),
-            Some("Overwrite it with your changes, or revert to the version on disk?"),
-            &[
-                PromptButton::ok("Overwrite"),
-                PromptButton::new("Revert"),
-                PromptButton::cancel("Cancel"),
-            ],
-            cx,
-        );
         cx.spawn_in(window, async move |area, cx| {
-            let answer = match answer.await {
-                Ok(answer) => answer,
-                Err(error) => {
-                    log::debug!("the conflict prompt was dismissed: {error}");
-                    return false;
-                }
-            };
-            let write = area.update_in(cx, |area, window, cx| {
-                let index = area.index_of_id(id)?;
-                match answer {
-                    OVERWRITE_ANSWER => Some(area.write(index, window, cx)),
-                    REVERT_ANSWER => {
-                        area.revert(index, window, cx);
-                        None
-                    }
-                    _ => None,
-                }
-            });
-            match write {
-                Ok(Some(write)) => write.await,
-                Ok(None) => false,
-                Err(error) => {
-                    log::debug!("editor area dropped while resolving a conflict: {error:#}");
-                    false
-                }
-            }
-        })
-    }
-
-    fn write(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) -> Task<bool> {
-        let Some(file) = self.files.get_mut(index) else {
-            return Task::ready(false);
-        };
-        let snapshot = match file.view.snapshot(cx) {
-            None => return Task::ready(true),
-            Some(Ok(snapshot)) => snapshot,
-            Some(Err(error)) => {
-                report_save_error(&file.path, &format!("{error:#}"), window, cx);
-                return Task::ready(false);
-            }
-        };
-        let request = SaveRequest {
-            id: file.id,
-            version: file.version,
-            on_saved: snapshot.on_saved,
-        };
-        let encode = snapshot.encode;
-        let recreate_folder = file.deleted;
-        let path = file.path.clone();
-        file.disk.saving = true;
-        file.disk._check = Task::ready(());
-        cx.notify();
-        let write =
-            cx.background_spawn(async move { write_snapshot(encode, &path, recreate_folder) });
-        cx.spawn_in(window, async move |area, cx| {
-            let result = write.await;
-            area.update_in(cx, |area, window, cx| {
-                area.finish_save(request, result, window, cx)
-            })
-            .unwrap_or_else(|error| {
-                log::debug!("editor area dropped while saving a file: {error:#}");
-                false
-            })
-        })
-    }
-
-    fn finish_save(
-        &mut self,
-        request: SaveRequest,
-        result: io::Result<Written>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
-        let Some(index) = self.index_of_id(request.id) else {
-            return result.is_ok();
-        };
-        let file = &mut self.files[index];
-        file.disk.saving = false;
-        let written = match result {
-            Ok(written) => written,
-            Err(error) => {
-                report_save_error(&file.path, &error, window, cx);
-                cx.notify();
+            if in_flight.await != SaveOutcome::Saved {
                 return false;
             }
-        };
-        file.disk.saved_hash = written.hash;
-        file.disk.stamp = Some(written.stamp);
-        file.disk.conflict = false;
-        if let Some(on_saved) = request.on_saved {
-            on_saved(cx);
-        }
-        file.dirty = file.version != request.version && file.view.differs_from_saved(cx);
-        if std::mem::take(&mut file.deleted) {
-            cx.emit(EditorAreaEvent::FileRecreated(file.path.clone()));
-        }
-        cx.emit(EditorAreaEvent::Saved);
-        cx.notify();
-        true
+            let save = area.update_in(cx, |area, window, cx| {
+                area.index_of_id(id)
+                    .map(|index| area.save(index, window, cx))
+            });
+            settle(save, "saving a file again").await
+        })
+    }
+
+    fn resolve_after_write(
+        &mut self,
+        id: u64,
+        write: SaveInFlight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Task<bool> {
+        cx.spawn_in(window, async move |area, cx| match write.await {
+            SaveOutcome::Saved => true,
+            SaveOutcome::Failed => false,
+            SaveOutcome::ChangedOnDisk => {
+                let resolve = area.update_in(cx, |area, window, cx| {
+                    area.index_of_id(id)
+                        .map(|index| area.resolve_conflict(index, window, cx))
+                });
+                settle(resolve, "resolving a save conflict").await
+            }
+        })
     }
 }
 
-fn report_save_error(path: &Path, error: &dyn Display, window: &mut Window, cx: &mut App) {
-    log::error!("failed to save {}: {error}", path.display());
-    window.push_notification(format!("Failed to save {}: {error}", path.display()), cx);
+async fn settle(task: anyhow::Result<Option<Task<bool>>>, action: &str) -> bool {
+    match task {
+        Ok(Some(task)) => task.await,
+        Ok(None) => true,
+        Err(error) => {
+            log::debug!("editor area dropped while {action}: {error:#}");
+            false
+        }
+    }
 }

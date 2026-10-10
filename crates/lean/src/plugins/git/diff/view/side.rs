@@ -4,7 +4,8 @@ use gpui_kit::component::highlighter::SyntaxHighlighter;
 use gpui_kit::component::input::{HighlightStyleResolver, Rope, RopeExt as _};
 use gpui_kit::{HighlightStyle, SharedString};
 
-const HIGHLIGHT_SIZE_LIMIT: usize = 4 * 1024 * 1024;
+use crate::files::settings::highlight_limit_bytes;
+
 const MAX_LINE_BYTES: usize = 4000;
 
 pub(super) struct Side {
@@ -27,7 +28,7 @@ impl Side {
 
     pub(super) fn new(text: &str, language: &str) -> Self {
         let text = Rope::from(text);
-        let highlighter = (text.len() <= HIGHLIGHT_SIZE_LIMIT).then(|| {
+        let highlighter = (text.len() <= highlight_limit_bytes()).then(|| {
             let mut highlighter = SyntaxHighlighter::new(language);
             highlighter.update(None, &text, None);
             highlighter

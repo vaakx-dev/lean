@@ -1,24 +1,24 @@
 mod actions;
 mod gutter;
+mod height;
 mod results;
 
 use gpui_kit::component::input::Editor;
 use gpui_kit::component::text::TextView;
-use gpui_kit::component::{ActiveTheme as _, RopeExt as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::Cell;
 use crate::plugins::notebook::Notebook;
+use crate::plugins::notebook::cell_options::CellFont;
 use crate::plugins::notebook::document::CellKind;
 use actions::render_actions;
 use gutter::render_gutter;
+use height::{EDITOR_PADDING, editor_height};
 use results::{render_outputs, render_run_status};
 
 const CELL_GROUP: &str = "notebook-cell";
-const EDITOR_LINE_HEIGHT: f32 = 1.5;
-const EDITOR_PADDING: Pixels = px(8.);
-const EDITOR_SLACK: Pixels = px(2.);
 
 impl Notebook {
     pub(in crate::plugins::notebook) fn render_cell(
@@ -47,7 +47,7 @@ impl Notebook {
                             .relative()
                             .flex_1()
                             .min_w_0()
-                            .child(render_body(cell, selected, window, cx))
+                            .child(render_body(cell, &self.cell_font, selected, window, cx))
                             .children(render_run_status(cell, cx))
                             .children(render_outputs(cell, cx))
                             .child(render_actions(cell, selected, cx)),
@@ -56,7 +56,13 @@ impl Notebook {
     }
 }
 
-fn render_body(cell: &Cell, selected: bool, window: &Window, cx: &Context<Notebook>) -> AnyElement {
+fn render_body(
+    cell: &Cell,
+    style: &CellFont,
+    selected: bool,
+    window: &Window,
+    cx: &Context<Notebook>,
+) -> AnyElement {
     if cell.kind == CellKind::Markdown && !cell.editing {
         return render_markdown(cell, selected, cx).into_any_element();
     }
@@ -78,17 +84,15 @@ fn render_body(cell: &Cell, selected: bool, window: &Window, cx: &Context<Notebo
         .child(
             Editor::new(&cell.editor)
                 .appearance(false)
+                .readonly(cell.verbatim.is_some())
+                .font_family(style.family.clone())
+                .text_size(style.size)
+                .line_height(relative(style.line_height))
                 .px_3()
                 .py(EDITOR_PADDING)
-                .h(editor_height(cell, cx)),
+                .h(editor_height(cell, style, cx)),
         )
         .into_any_element()
-}
-
-fn editor_height(cell: &Cell, cx: &App) -> Pixels {
-    let lines = cell.editor.read(cx).text().lines_len().max(1);
-    let line_height = cx.theme().mono_font_size * EDITOR_LINE_HEIGHT;
-    line_height * lines as f32 + EDITOR_PADDING * 2. + EDITOR_SLACK
 }
 
 fn render_markdown(cell: &Cell, selected: bool, cx: &Context<Notebook>) -> Stateful<Div> {

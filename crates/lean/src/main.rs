@@ -9,6 +9,7 @@ mod plugins;
 mod project;
 mod recent_projects;
 mod settings;
+mod storage;
 mod terminal;
 mod theme;
 mod toolchain;
@@ -16,8 +17,8 @@ mod watcher;
 mod workspace;
 
 fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let project_root = app::project_root_from_args()?;
-    app::run(project_root);
+    app::init_logging();
+    let launch = app::launch_target_from_args()?;
+    app::run(launch);
     Ok(())
 }

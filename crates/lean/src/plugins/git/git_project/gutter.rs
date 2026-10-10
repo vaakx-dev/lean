@@ -9,6 +9,7 @@ use super::GitProject;
 use crate::plugins::GutterMarker;
 use crate::plugins::git::diff::{DiffBase, Hunk, gutter_markers, hunks_for};
 use crate::plugins::git::repo::FileStatus;
+use crate::plugins::git::settings::{GUTTER_BASE, GUTTER_ENABLED, GutterBase};
 
 const DEBOUNCE: Duration = Duration::from_millis(200);
 
@@ -54,11 +55,11 @@ impl GitProject {
         }
         self.gutter.task = Some(cx.spawn(async move |git, cx| {
             cx.background_executor().timer(DEBOUNCE).await;
-            let Ok((workdir, jobs)) = git.update(cx, |git, cx| git.gutter_jobs(cx)) else {
+            let Ok((workdir, base, jobs)) = git.update(cx, |git, cx| git.gutter_jobs(cx)) else {
                 return;
             };
             let results = cx
-                .background_spawn(async move { compute_hunks(workdir.as_deref(), jobs) })
+                .background_spawn(async move { compute_hunks(workdir.as_deref(), base, jobs) })
                 .await;
             if let Err(error) = git.update(cx, |git, cx| git.apply_gutter(results, cx)) {
                 log::debug!("git state dropped before the change markers were ready: {error:#}");
@@ -66,8 +67,10 @@ impl GitProject {
         }));
     }
 
-    fn gutter_jobs(&self, cx: &App) -> (Option<PathBuf>, Vec<GutterJob>) {
+    fn gutter_jobs(&self, cx: &App) -> (Option<PathBuf>, DiffBase, Vec<GutterJob>) {
         let workdir = self.state.as_ref().map(|state| state.workdir.clone());
+        let enabled = GUTTER_ENABLED.get(cx);
+        let base = diff_base(GUTTER_BASE.get(cx));
         let jobs = self
             .editor_area
             .read(cx)
@@ -84,11 +87,11 @@ impl GitProject {
                 Some(GutterJob {
                     path: path.to_path_buf(),
                     view: id,
-                    text: self.is_tracked(path).then_some(text),
+                    text: (enabled && self.is_tracked(path)).then_some(text),
                 })
             })
             .collect();
-        (workdir, jobs)
+        (workdir, base, jobs)
     }
 
     fn is_tracked(&self, path: &Path) -> bool {
@@ -137,16 +140,26 @@ impl GitProject {
     }
 }
 
-fn compute_hunks(workdir: Option<&Path>, jobs: Vec<GutterJob>) -> Vec<GutterResult> {
+fn diff_base(base: GutterBase) -> DiffBase {
+    match base {
+        GutterBase::Index => DiffBase::Index,
+        GutterBase::Head => DiffBase::Staged,
+    }
+}
+
+fn compute_hunks(
+    workdir: Option<&Path>,
+    base: DiffBase,
+    jobs: Vec<GutterJob>,
+) -> Vec<GutterResult> {
     jobs.into_iter()
         .map(|job| {
             let hunks = match (workdir, job.text) {
                 (Some(workdir), Some(text)) => {
-                    hunks_for(workdir, &job.path, &text.to_string(), DiffBase::Index)
-                        .unwrap_or_else(|error| {
-                            log::debug!("failed to diff {}: {error:#}", job.path.display());
-                            Vec::new()
-                        })
+                    hunks_for(workdir, &job.path, &text.to_string(), base).unwrap_or_else(|error| {
+                        log::debug!("failed to diff {}: {error:#}", job.path.display());
+                        Vec::new()
+                    })
                 }
                 _ => Vec::new(),
             };

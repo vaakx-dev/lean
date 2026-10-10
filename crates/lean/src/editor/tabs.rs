@@ -65,7 +65,12 @@ impl EditorArea {
             .when(!is_active, |tab| {
                 tab.hover(|style| style.bg(theme.list_hover))
             })
-            .on_click(cx.listener(move |area, _, window, cx| area.activate(index, window, cx)))
+            .on_click(cx.listener(move |area, event: &ClickEvent, window, cx| {
+                if event.click_count() > 1 {
+                    area.pin(index, cx);
+                }
+                area.activate(index, window, cx)
+            }))
             .on_mouse_down(
                 MouseButton::Middle,
                 cx.listener(move |area, _, window, cx| area.close(index, window, cx)),
@@ -74,6 +79,7 @@ impl EditorArea {
             .child(
                 div()
                     .when(file.deleted, |name| name.line_through())
+                    .when(file.preview, |name| name.italic())
                     .child(file.name.clone()),
             )
             .when(file.disk.conflict, |tab| {

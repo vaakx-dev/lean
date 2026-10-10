@@ -2,10 +2,10 @@ use std::mem;
 
 use gpui_kit::SharedString;
 
-use super::MAX_TEXT_LINES;
 use super::ansi::{incomplete_escape_start, strip_ansi};
 
 pub(super) struct StreamText {
+    max_lines: usize,
     plain: String,
     pending_escape: String,
     newlines: usize,
@@ -15,8 +15,9 @@ pub(super) struct StreamText {
 }
 
 impl StreamText {
-    pub(super) fn new(text: &str) -> Self {
+    pub(super) fn new(text: &str, max_lines: usize) -> Self {
         let mut stream = Self {
+            max_lines,
             plain: String::new(),
             pending_escape: String::new(),
             newlines: 0,
@@ -43,7 +44,7 @@ impl StreamText {
     }
 
     fn append(&mut self, text: &str) {
-        let room = MAX_TEXT_LINES.saturating_sub(self.newlines);
+        let room = self.max_lines.saturating_sub(self.newlines);
         if room > 0 {
             let end = text
                 .match_indices('\n')
@@ -71,14 +72,14 @@ impl StreamText {
 
     fn render(&self) -> SharedString {
         let line_count = self.line_count();
-        if line_count <= MAX_TEXT_LINES {
+        if line_count <= self.max_lines {
             return self.plain.trim_end_matches('\n').to_string().into();
         }
         let kept: Vec<&str> = self.plain.lines().collect();
         format!(
             "{}\n… {} more lines",
             kept.join("\n"),
-            line_count - MAX_TEXT_LINES
+            line_count - self.max_lines
         )
         .into()
     }

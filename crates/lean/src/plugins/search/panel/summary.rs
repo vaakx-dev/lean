@@ -6,7 +6,6 @@ use gpui_kit::*;
 
 use super::SearchPanel;
 use super::running::SearchStatus;
-use crate::plugins::search::engine::MAX_MATCHES;
 
 impl SearchPanel {
     pub(super) fn render_summary(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -45,6 +44,7 @@ impl SearchPanel {
         } else {
             "Collapse All"
         };
+        let limit = self.config.max_results;
         let summary = v_flex()
             .flex_shrink_0()
             .pl_3()
@@ -76,7 +76,7 @@ impl SearchPanel {
             )
             .when(self.results.truncated, |summary| {
                 summary.child(div().text_xs().text_color(theme.warning).child(format!(
-                    "Showing the first {MAX_MATCHES} results. Narrow your search to see more."
+                    "Showing the first {limit} results. Narrow your search to see more."
                 )))
             });
         Some(summary.into_any_element())

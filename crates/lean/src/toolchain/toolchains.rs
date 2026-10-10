@@ -1,25 +1,33 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+mod active;
+mod launch;
+mod preferences;
+mod selection;
 
-use gpui_kit::{AppContext as _, Context, EventEmitter, SharedString, Task};
+use std::path::PathBuf;
 
-use super::activation::{activation_command, activation_environment};
-use super::discovery::discover;
+use gpui_kit::{AppContext as _, Context, EventEmitter, SharedString, Subscription, Task};
+
+use super::Toolchain;
+use super::auto_refresh::AutoRefresh;
+use super::discovery::{DiscoveryOptions, discover};
+use super::settings::{AUTO_REFRESH, DEFAULT_INTERPRETER, DefaultInterpreter};
 use super::store::{self, Choices};
-use super::{NO_TOOLCHAIN_LABEL, Toolchain};
-use crate::terminal::{ShellKind, TerminalLaunch};
 
 pub(crate) enum ToolchainsEvent {
     Discovered,
     Selected(SharedString),
+    TerminalActivationChanged,
 }
 
 pub(crate) struct Toolchains {
     project_root: PathBuf,
     available: Vec<Toolchain>,
     choices: Choices,
+    default_interpreter: DefaultInterpreter,
     discovered: bool,
+    auto_refresh: Option<AutoRefresh>,
     _discovery_task: Task<()>,
+    _settings: Vec<Subscription>,
 }
 
 impl EventEmitter<ToolchainsEvent> for Toolchains {}
@@ -30,8 +38,11 @@ impl Toolchains {
             project_root,
             available: Vec::new(),
             choices: Choices::new(),
+            default_interpreter: DEFAULT_INTERPRETER.get(cx),
             discovered: false,
+            auto_refresh: None,
             _discovery_task: Task::ready(()),
+            _settings: preferences::observe_settings(cx),
         };
         toolchains.refresh(cx);
         toolchains
@@ -43,10 +54,11 @@ impl Toolchains {
 
     pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
         let root = self.project_root.clone();
+        let options = DiscoveryOptions::from_settings(&root, cx);
         let load_choices = !self.is_discovered();
         let discovery = cx.background_spawn(async move {
             let choices = load_choices.then(|| store::load(&root));
-            (discover(&root), choices)
+            (discover(&root, &options), choices)
         });
         self._discovery_task = cx.spawn(async move |toolchains, cx| {
             let (available, choices) = discovery.await;
@@ -58,61 +70,17 @@ impl Toolchains {
         });
     }
 
-    pub(crate) fn for_language<'a, 'l>(
-        &'a self,
-        language: &'l str,
-    ) -> impl Iterator<Item = &'a Toolchain> {
-        self.available
-            .iter()
-            .filter(move |toolchain| toolchain.language == language)
-    }
-
-    pub(crate) fn has_language(&self, language: &str) -> bool {
-        self.for_language(language).next().is_some()
-    }
-
-    pub(crate) fn active(&self, language: &str) -> Option<&Toolchain> {
-        match self.choices.get(language) {
-            Some(None) => None,
-            Some(Some(prefix)) => self
-                .find(language, prefix)
-                .or_else(|| self.default_for(language)),
-            None => self.default_for(language),
+    pub(crate) fn refresh_if_automatic(&mut self, cx: &mut Context<Self>) {
+        if AUTO_REFRESH.get(cx) {
+            self.refresh(cx);
         }
     }
 
-    pub(crate) fn active_label(&self, language: &str) -> SharedString {
-        self.active(language)
-            .map(Toolchain::label)
-            .unwrap_or_else(|| NO_TOOLCHAIN_LABEL.into())
-    }
-
-    pub(crate) fn select(
-        &mut self,
-        language: &str,
-        prefix: Option<PathBuf>,
-        cx: &mut Context<Self>,
-    ) {
-        let previous = self.active_prefix(language);
-        self.choices.insert(language.to_owned(), prefix);
-        let root = self.project_root.clone();
-        let choices = self.choices.clone();
-        cx.background_spawn(async move { store::save(&root, &choices) })
-            .detach();
-        if self.active_prefix(language) != previous {
-            cx.emit(ToolchainsEvent::Selected(self.active_label(language)));
-        }
-        cx.notify();
-    }
-
-    pub(crate) fn environment(&self) -> HashMap<String, String> {
-        activation_environment(&self.available, &self.active_toolchains())
-    }
-
-    pub(crate) fn terminal_launch(&self, shell: ShellKind) -> TerminalLaunch {
-        TerminalLaunch {
-            environment: self.environment(),
-            startup_command: activation_command(&self.active_toolchains(), shell),
+    fn set_auto_refresh(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if enabled {
+            self.refresh(cx);
+        } else {
+            self.auto_refresh = None;
         }
     }
 
@@ -122,45 +90,31 @@ impl Toolchains {
         choices: Option<Choices>,
         cx: &mut Context<Self>,
     ) {
-        self.available = available;
-        if let Some(choices) = choices {
-            self.choices = choices;
-        }
-        self.discovered = true;
+        let was_discovered = self.discovered;
+        self.track_selection(was_discovered, cx, |toolchains| {
+            toolchains.available = available;
+            if let Some(mut loaded) = choices {
+                loaded.append(&mut toolchains.choices);
+                toolchains.choices = loaded;
+            }
+            toolchains.discovered = true;
+        });
+        self.sync_auto_refresh(cx);
         cx.emit(ToolchainsEvent::Discovered);
         cx.notify();
     }
 
-    fn active_prefix(&self, language: &str) -> Option<PathBuf> {
-        self.active(language)
-            .map(|toolchain| toolchain.prefix.clone())
-    }
-
-    fn active_toolchains(&self) -> Vec<&Toolchain> {
-        let mut languages: Vec<&str> = self
-            .available
-            .iter()
-            .map(|toolchain| toolchain.language)
-            .collect();
-        languages.sort_unstable();
-        languages.dedup();
-        languages
-            .into_iter()
-            .filter_map(|language| self.active(language))
-            .collect()
-    }
-
-    fn find(&self, language: &str, prefix: &Path) -> Option<&Toolchain> {
-        self.for_language(language)
-            .find(|toolchain| toolchain.prefix == prefix)
-    }
-
-    fn default_for(&self, language: &str) -> Option<&Toolchain> {
-        self.for_language(language)
-            .find(|toolchain| toolchain.prefix.starts_with(&self.project_root))
-            .or_else(|| {
-                self.for_language(language)
-                    .find(|toolchain| toolchain.is_inherited)
-            })
+    fn sync_auto_refresh(&mut self, cx: &mut Context<Self>) {
+        self.auto_refresh = None;
+        if !AUTO_REFRESH.get(cx) {
+            return;
+        }
+        let options = DiscoveryOptions::from_settings(&self.project_root, cx);
+        self.auto_refresh = AutoRefresh::start(
+            &self.project_root,
+            &options.search_paths,
+            &self.available,
+            cx,
+        );
     }
 }

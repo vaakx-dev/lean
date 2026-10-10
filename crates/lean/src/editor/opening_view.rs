@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui_kit::*;
 
@@ -7,6 +7,24 @@ use super::open_file::OpenFile;
 use crate::plugins::AnyFileView;
 
 impl EditorArea {
+    pub(crate) fn show_view(
+        &mut self,
+        key: &Path,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(index) = self.index_of_view(key) else {
+            return false;
+        };
+        self.activate(index, window, cx);
+        true
+    }
+
+    pub(crate) fn view_entity<T: 'static>(&self, key: &Path) -> Option<Entity<T>> {
+        let index = self.index_of_view(key)?;
+        self.files[index].view.view().downcast().ok()
+    }
+
     pub(crate) fn open_view(
         &mut self,
         key: PathBuf,

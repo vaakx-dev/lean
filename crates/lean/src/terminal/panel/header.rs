@@ -46,7 +46,7 @@ impl TerminalPanel {
             .gap_1()
             .overflow_x_scroll();
         match self.tabs.as_slice() {
-            [tab] => titles.child(div().min_w_0().truncate().child(tab.shell_name.clone())),
+            [tab] => titles.child(div().min_w_0().truncate().child(tab_title(tab, None, cx))),
             tabs => titles.children(
                 tabs.iter()
                     .enumerate()
@@ -58,7 +58,7 @@ impl TerminalPanel {
     fn render_tab(&self, index: usize, tab: &TerminalTab, cx: &Context<Self>) -> Stateful<Div> {
         let theme = cx.theme();
         let is_active = index == self.active;
-        let title = format!("{} {}", tab.shell_name, index + 1);
+        let title = tab_title(tab, Some(index), cx);
         h_flex()
             .id(index)
             .group(TAB_GROUP)
@@ -111,6 +111,15 @@ impl TerminalPanel {
                     .group_hover(TAB_GROUP, |style| style.visible())
                     .child(Icon::empty().path("icons/x.svg").size(px(12.))),
             )
+    }
+}
+
+fn tab_title(tab: &TerminalTab, index: Option<usize>, cx: &App) -> SharedString {
+    let view = tab.view.read(cx);
+    match (view.title(), index) {
+        (Some(title), _) => title,
+        (None, Some(index)) => format!("{} {}", view.shell_name(), index + 1).into(),
+        (None, None) => view.shell_name(),
     }
 }
 

@@ -14,7 +14,15 @@ impl TerminalView {
                 self.startup_output_arrived(cx);
                 cx.notify();
             }
-            Event::Exit | Event::ChildExit(_) => self.mark_exited(cx),
+            Event::ChildExit(status) => self.mark_exited(status.code(), cx),
+            Event::Exit => self.mark_exited(None, cx),
+            Event::Title(title) => self.set_title(Some(title.into()), cx),
+            Event::ResetTitle => self.set_title(None, cx),
+            Event::Bell => self.ring_bell(cx),
+            Event::CursorBlinkingChange => {
+                self.show_cursor(cx);
+                cx.notify();
+            }
             Event::PtyWrite(text) => self.write(text.into_bytes()),
             Event::ClipboardStore(_, text) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(text))
@@ -35,11 +43,7 @@ impl TerminalView {
                     session.write(format(session.size().window_size()).into_bytes());
                 }
             }
-            Event::MouseCursorDirty
-            | Event::Title(_)
-            | Event::ResetTitle
-            | Event::CursorBlinkingChange
-            | Event::Bell => {}
+            Event::MouseCursorDirty => {}
         }
     }
 

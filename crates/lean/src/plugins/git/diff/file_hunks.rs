@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use super::base::DiffBase;
-use super::blobs::{Content, read_base};
+use super::blobs::{Content, is_in_index, read_base};
 use super::hunks::{Hunk, line_hunks};
 use super::repository::open_repo_file;
 
@@ -19,6 +19,7 @@ pub(crate) fn hunks_for(
     }
     match read_base(&file, base)? {
         Content::Text(old) => line_hunks(&old, text),
+        Content::Missing if !is_in_index(&file)? => Ok(Vec::new()),
         Content::Missing => line_hunks("", text),
         Content::Binary => Ok(Vec::new()),
     }

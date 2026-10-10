@@ -6,35 +6,20 @@ use super::Minimap;
 use super::geometry::Geometry;
 use super::interaction::register_mouse_listeners;
 use super::rows::Rows;
+use super::style::MinimapStyle;
 use super::viewport::EditorViewport;
 
-const TEXT_OPACITY: f32 = 0.6;
-
 pub(super) struct MinimapElement {
-    minimap: Entity<Minimap>,
-    rows: Vec<Rc<Rows>>,
-    viewport: Option<EditorViewport>,
-    height: Pixels,
-    slider_color: Hsla,
+    pub(super) minimap: Entity<Minimap>,
+    pub(super) rows: Vec<Rc<Rows>>,
+    pub(super) viewport: Option<EditorViewport>,
+    pub(super) height: Pixels,
+    pub(super) style: MinimapStyle,
+    pub(super) slider_color: Option<Hsla>,
+    pub(super) refresh_pending: bool,
 }
 
 impl MinimapElement {
-    pub(super) fn new(
-        minimap: Entity<Minimap>,
-        rows: Vec<Rc<Rows>>,
-        viewport: Option<EditorViewport>,
-        height: Pixels,
-        slider_color: Hsla,
-    ) -> Self {
-        Self {
-            minimap,
-            rows,
-            viewport,
-            height,
-            slider_color,
-        }
-    }
-
     fn paint_lines(&self, geometry: &Geometry, window: &mut Window) {
         let visible = geometry.visible_lines();
         for rows in &self.rows {
@@ -43,19 +28,19 @@ impl MinimapElement {
                 for block in rows.line(line) {
                     window.paint_quad(fill(
                         geometry.block_bounds(line, block.column, block.width),
-                        rows.color(block).opacity(TEXT_OPACITY),
+                        rows.color(block).opacity(self.style.text_opacity),
                     ));
                 }
             }
         }
     }
 
-    fn report_height(&self, height: Pixels, cx: &mut App) {
-        if height == self.height {
+    fn report_painted(&self, height: Pixels, cx: &mut App) {
+        if height == self.height && !self.refresh_pending {
             return;
         }
         let minimap = self.minimap.clone();
-        cx.defer(move |cx| minimap.update(cx, |minimap, cx| minimap.set_height(height, cx)));
+        cx.defer(move |cx| minimap.update(cx, |minimap, cx| minimap.painted(height, cx)));
     }
 }
 
@@ -114,15 +99,17 @@ impl Element for MinimapElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        self.report_height(bounds.size.height, cx);
+        self.report_painted(bounds.size.height, cx);
         let Some(viewport) = self.viewport else {
             return;
         };
-        let geometry = Geometry::new(bounds, &viewport);
+        let geometry = Geometry::new(bounds, &viewport, self.style.line_height);
         window.set_cursor_style(CursorStyle::Arrow, hitbox);
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
             self.paint_lines(&geometry, window);
-            window.paint_quad(fill(geometry.slider_bounds(), self.slider_color));
+            if let Some(color) = self.slider_color {
+                window.paint_quad(fill(geometry.slider_bounds(), color));
+            }
         });
         register_mouse_listeners(&self.minimap, geometry, hitbox, window);
     }

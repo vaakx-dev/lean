@@ -32,9 +32,9 @@ const PYTHON_DIR: &str = "bin";
 #[cfg(windows)]
 const PYTHON_DIR: &str = "";
 
-pub(super) fn discover(project_root: &Path) -> Vec<Toolchain> {
+pub(super) fn discover(project_root: &Path, search_paths: &[PathBuf]) -> Vec<Toolchain> {
     let mut seen = HashSet::new();
-    locations::candidate_prefixes(project_root)
+    locations::candidate_prefixes(project_root, search_paths)
         .into_iter()
         .filter_map(|prefix| dunce::canonicalize(prefix).ok())
         .filter(|prefix| seen.insert(prefix.clone()))

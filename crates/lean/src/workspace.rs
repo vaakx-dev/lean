@@ -5,8 +5,12 @@ mod folder;
 mod folder_picker;
 mod layout;
 mod panels;
+mod persistence;
 mod project_switch;
+mod quick_settings;
 mod recent;
+pub(crate) mod settings;
+mod shortcuts;
 mod sidebar;
 mod sidebar_resize;
 mod status_bar;
@@ -22,12 +26,16 @@ use gpui_kit::component::menu::AppMenuBar;
 use gpui_kit::*;
 
 use crate::plugins::WorkspaceContext;
+use crate::recent_projects::settings::{MENU_LIMIT, RECENT_LIMIT};
 use crate::watcher::FsChanges;
 use folder::ProjectViews;
 use panels::SidebarPanel;
+use settings::{SIDEBAR_WIDTH, STATUS_BAR_VISIBLE, TITLE_BAR_SEARCH_BOX};
+use sidebar_resize::clamp_sidebar_width;
 use terminal_panel::TerminalDock;
 
 pub(crate) use close_confirmation::CloseIntent;
+pub(crate) use persistence::restored_window_bounds;
 pub(crate) use status_bar::status_item;
 
 const GAP: Pixels = px(6.);
@@ -49,16 +57,22 @@ pub(crate) struct Workspace {
     close_confirmed: bool,
     _project_subscriptions: Vec<Subscription>,
     _activation_subscription: Subscription,
+    _settings_subscriptions: Vec<Subscription>,
 }
 
 impl Workspace {
-    pub(crate) fn new(project_root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        project_root: PathBuf,
+        file: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let views = ProjectViews::new(project_root, window, cx);
         let activation_subscription = cx
             .observe_window_activation(window, |workspace, window, cx| {
                 workspace.refresh_after_activation(window, cx)
             });
-        let workspace = Self {
+        let mut workspace = Self {
             context: views.context,
             panels: views.panels,
             status_items: views.status_items,
@@ -66,7 +80,7 @@ impl Workspace {
             focus_handle: cx.focus_handle(),
             active_panel: 0,
             sidebar_visible: true,
-            sidebar_width: px(260.),
+            sidebar_width: clamp_sidebar_width(SIDEBAR_WIDTH.get(cx)),
             resizing_sidebar: false,
             terminal_visible: false,
             terminal: None,
@@ -75,11 +89,32 @@ impl Workspace {
             close_confirmed: false,
             _project_subscriptions: views.subscriptions,
             _activation_subscription: activation_subscription,
+            _settings_subscriptions: Self::observe_settings(cx),
         };
+        workspace.active_panel = workspace.default_panel_index(cx);
+        workspace.restore_layout(window, cx);
         workspace.update_title(window, cx);
         workspace.remember_project(cx);
+        workspace.reopen_files(file, window, cx);
         Self::guard_window_close(window, cx);
         workspace
+    }
+
+    fn observe_settings(cx: &mut Context<Self>) -> Vec<Subscription> {
+        vec![
+            SIDEBAR_WIDTH.observe(cx, |workspace, width, cx| {
+                workspace.sidebar_width = clamp_sidebar_width(width);
+                cx.notify();
+            }),
+            STATUS_BAR_VISIBLE.observe(cx, |_, _, cx| cx.notify()),
+            TITLE_BAR_SEARCH_BOX.observe(cx, |_, _, cx| cx.notify()),
+            RECENT_LIMIT.observe(cx, |workspace, _, cx| workspace.refresh_app_menus(cx)),
+            MENU_LIMIT.observe(cx, |workspace, _, cx| workspace.refresh_app_menus(cx)),
+        ]
+    }
+
+    fn project_root(&self, cx: &App) -> PathBuf {
+        self.context.project.read(cx).root().to_path_buf()
     }
 
     fn update_title(&self, window: &mut Window, cx: &App) {

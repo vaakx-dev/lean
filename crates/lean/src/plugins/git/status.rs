@@ -5,6 +5,7 @@ use gpui_kit::*;
 
 use super::git_project::GitProject;
 use super::repo::GitState;
+use super::settings::STATUS_BAR_BRANCH;
 use super::source_control::PANEL;
 use crate::app::actions::ShowPanel;
 use crate::plugins::{StatusItem, WorkspaceContext};
@@ -19,15 +20,23 @@ fn build(workspace: &WorkspaceContext, _: &mut Window, cx: &mut App) -> AnyView 
 
 struct GitStatus {
     git: Entity<GitProject>,
-    _subscription: Subscription,
+    show_branch: bool,
+    _subscriptions: [Subscription; 2],
 }
 
 impl GitStatus {
     fn new(git: Entity<GitProject>, cx: &mut Context<Self>) -> Self {
-        let subscription = cx.observe(&git, |_, _, cx| cx.notify());
+        let subscriptions = [
+            cx.observe(&git, |_, _, cx| cx.notify()),
+            STATUS_BAR_BRANCH.observe(cx, |status, show, cx| {
+                status.show_branch = show;
+                cx.notify();
+            }),
+        ];
         Self {
             git,
-            _subscription: subscription,
+            show_branch: STATUS_BAR_BRANCH.get(cx),
+            _subscriptions: subscriptions,
         }
     }
 }
@@ -42,7 +51,7 @@ impl Render for GitStatus {
             .when_some(git.error(), |bar, error| {
                 bar.child(error_item(error.message.clone(), theme))
             })
-            .when_some(git.state(), |bar, state| {
+            .when_some(git.state().filter(|_| self.show_branch), |bar, state| {
                 bar.child(branch_item(state, theme))
             })
     }

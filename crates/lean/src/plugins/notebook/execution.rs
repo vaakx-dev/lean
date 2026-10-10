@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::UnboundedReceiver;
@@ -8,7 +8,8 @@ use gpui_kit::*;
 use super::Notebook;
 use super::cell::{CellId, RunState};
 use super::document::CellKind;
-use super::kernel::{Kernel, KernelEvent, KernelSpec, Reply};
+use super::kernel::{Kernel, KernelEvent, KernelSpec, Reply, kernel_program};
+use super::settings::{INTERPRETER, STARTUP_TIMEOUT_S, STOP_ON_ERROR};
 use crate::plugins::FileViewEvent;
 use crate::toolchain::ToolchainsEvent;
 
@@ -17,6 +18,7 @@ const RUNNABLE_LANGUAGE: &str = "python";
 pub(super) struct Session {
     kernel: Kernel,
     environment: HashMap<String, String>,
+    interpreter: String,
     pub(super) outdated: bool,
     pub(super) ready: bool,
     pub(super) running: Option<Running>,
@@ -85,10 +87,16 @@ impl Notebook {
             self.pump(cx);
             cx.emit(FileViewEvent::StatusChanged);
         }
+        self.refresh_outdated(cx);
+    }
+
+    pub(super) fn refresh_outdated(&mut self, cx: &mut Context<Self>) {
         if self.session.is_some() {
             let environment = self.toolchains.read(cx).environment();
+            let interpreter = INTERPRETER.get(cx);
             if let Some(session) = &mut self.session {
-                session.outdated = session.environment != environment;
+                session.outdated =
+                    session.environment != environment || session.interpreter != interpreter;
             }
         }
         cx.notify();
@@ -123,9 +131,12 @@ impl Notebook {
             return;
         }
         let environment = self.toolchains.read(cx).environment();
+        let interpreter = INTERPRETER.get(cx);
         let spec = KernelSpec {
             folder: self.folder.clone(),
             environment: environment.clone(),
+            program: kernel_program(&interpreter),
+            startup_timeout: Duration::from_secs(STARTUP_TIMEOUT_S.get(cx).into()),
         };
         match Kernel::start(spec) {
             Ok((kernel, events)) => {
@@ -133,6 +144,7 @@ impl Notebook {
                 self.session = Some(Session {
                     kernel,
                     environment,
+                    interpreter,
                     outdated: false,
                     ready: false,
                     running: None,
@@ -210,7 +222,7 @@ impl Notebook {
             Reply::ExecutionCount(count) => cell.execution_count = Some(count),
             Reply::Idle => {
                 cell.finish_run(started);
-                if cell.has_error() {
+                if cell.has_error() && STOP_ON_ERROR.get(cx) {
                     self.cancel_queue();
                 }
                 self.pump(cx);

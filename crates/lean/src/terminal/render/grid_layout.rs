@@ -48,7 +48,7 @@ impl GridLayout {
             term.screen_lines(),
             appearance.cursor,
         );
-        let mut scan = GridScan::new(appearance.palette, *content.colors);
+        let mut scan = GridScan::new(appearance.palette, *content.colors, content.selection);
         for indexed in content.display_iter {
             scan.push(indexed, content.display_offset, cursor.as_ref());
         }

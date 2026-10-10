@@ -1,4 +1,6 @@
 use alacritty_terminal::grid::Indexed;
+use alacritty_terminal::index::Point as GridPoint;
+use alacritty_terminal::selection::SelectionRange;
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::term::point_to_viewport;
@@ -21,15 +23,21 @@ struct BackgroundSpan {
 pub(super) struct GridScan {
     palette: Palette,
     overrides: Colors,
+    selection: Option<SelectionRange>,
     batches: Vec<TextBatch>,
     backgrounds: Vec<BackgroundSpan>,
 }
 
 impl GridScan {
-    pub(super) fn new(palette: Palette, overrides: Colors) -> Self {
+    pub(super) fn new(
+        palette: Palette,
+        overrides: Colors,
+        selection: Option<SelectionRange>,
+    ) -> Self {
         Self {
             palette,
             overrides,
+            selection,
             batches: Vec::new(),
             backgrounds: Vec::new(),
         }
@@ -53,6 +61,9 @@ impl GridScan {
         };
         let (line, column) = (position.line, position.column.0);
         let mut style = CellStyle::of(cell, &self.palette, &self.overrides);
+        if self.is_selected(&indexed) {
+            style = style.selected(&self.palette);
+        }
         if cursor.is_some_and(|cursor| cursor.is_solid_block_at(line, column)) {
             style = style.under_cursor(&self.palette);
         }
@@ -96,6 +107,16 @@ impl GridScan {
             .into_iter()
             .map(|batch| batch.shape(origin, appearance, metrics, window))
             .collect()
+    }
+
+    fn is_selected(&self, indexed: &Indexed<&Cell>) -> bool {
+        let Some(selection) = self.selection else {
+            return false;
+        };
+        let point = indexed.point;
+        selection.contains(point)
+            || (indexed.cell.flags.contains(Flags::WIDE_CHAR)
+                && selection.contains(GridPoint::new(point.line, point.column + 1)))
     }
 
     fn push_background(&mut self, line: usize, column: usize, cells: usize, color: Hsla) {

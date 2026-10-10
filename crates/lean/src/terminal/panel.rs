@@ -1,11 +1,11 @@
+mod closing;
 mod header;
-
-use std::path::PathBuf;
 
 use gpui_kit::component::v_flex;
 use gpui_kit::*;
 
 use super::launch::TerminalLaunch;
+use super::start_directory::StartDirectory;
 use super::view::{TerminalEvent, TerminalView};
 
 pub(crate) enum TerminalPanelEvent {
@@ -14,12 +14,11 @@ pub(crate) enum TerminalPanelEvent {
 
 struct TerminalTab {
     view: Entity<TerminalView>,
-    shell_name: SharedString,
     _subscription: Subscription,
 }
 
 pub(crate) struct TerminalPanel {
-    working_directory: PathBuf,
+    start_directory: StartDirectory,
     launch: TerminalLaunch,
     tabs: Vec<TerminalTab>,
     active: usize,
@@ -29,12 +28,12 @@ impl EventEmitter<TerminalPanelEvent> for TerminalPanel {}
 
 impl TerminalPanel {
     pub(crate) fn new(
-        working_directory: PathBuf,
+        start_directory: StartDirectory,
         launch: TerminalLaunch,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut panel = Self {
-            working_directory,
+            start_directory,
             launch,
             tabs: Vec::new(),
             active: 0,
@@ -47,6 +46,13 @@ impl TerminalPanel {
         self.launch = launch;
     }
 
+    pub(crate) fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.is_empty() {
+            self.add_terminal(cx);
+        }
+        self.focus_active(window, cx);
+    }
+
     pub(crate) fn focus_active(&self, window: &mut Window, cx: &mut App) {
         if let Some(tab) = self.tabs.get(self.active) {
             let focus_handle = tab.view.focus_handle(cx);
@@ -54,10 +60,14 @@ impl TerminalPanel {
         }
     }
 
-    pub(crate) fn running_count(&self, cx: &App) -> usize {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.tabs.is_empty()
+    }
+
+    pub(crate) fn busy_count(&self, cx: &App) -> usize {
         self.tabs
             .iter()
-            .filter(|tab| tab.view.read(cx).is_running())
+            .filter(|tab| tab.view.read(cx).is_busy())
             .count()
     }
 
@@ -68,16 +78,14 @@ impl TerminalPanel {
     }
 
     fn add_terminal(&mut self, cx: &mut Context<Self>) {
-        let working_directory = self.working_directory.clone();
+        let working_directory = self.start_directory.resolve(cx);
         let launch = self.launch.clone();
         let view = cx.new(|cx| TerminalView::new(working_directory, launch, cx));
-        let shell_name = view.read(cx).shell_name();
         let subscription = cx.subscribe(&view, |_, _, event: &TerminalEvent, cx| match event {
-            TerminalEvent::Exited => cx.notify(),
+            TerminalEvent::Exited | TerminalEvent::TitleChanged => cx.notify(),
         });
         self.tabs.push(TerminalTab {
             view,
-            shell_name,
             _subscription: subscription,
         });
         self.active = self.tabs.len() - 1;
@@ -94,18 +102,6 @@ impl TerminalPanel {
             return;
         }
         self.active = index;
-        self.focus_active(window, cx);
-        cx.notify();
-    }
-
-    fn close(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.len() <= 1 || index >= self.tabs.len() {
-            return;
-        }
-        self.tabs.remove(index);
-        if self.active > index || self.active >= self.tabs.len() {
-            self.active = self.active.saturating_sub(1);
-        }
         self.focus_active(window, cx);
         cx.notify();
     }

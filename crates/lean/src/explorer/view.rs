@@ -4,10 +4,12 @@ use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::*;
 
 use super::context_menu::build_context_menu;
-use super::file_operations::bind_file_operations;
+use super::file_operations::{NewFile, NewFolder, bind_file_operations};
 use super::keyboard::{KEY_CONTEXT, NOT_EDITING_CONTEXT};
 use super::{Explorer, chevron_icon};
 use crate::app::actions::{CollapseAllFolders, RefreshExplorer};
+
+const HEADER_HEIGHT: Pixels = px(36.);
 
 impl Explorer {
     fn key_context(&self) -> KeyContext {
@@ -33,12 +35,12 @@ impl Explorer {
         };
         h_flex()
             .id("explorer-root")
-            .h(px(30.))
+            .h(HEADER_HEIGHT)
             .flex_shrink_0()
             .border_b_1()
             .border_color(separator)
             .pl_2()
-            .pr_1()
+            .pr_1p5()
             .gap_1()
             .cursor_pointer()
             .on_click(cx.listener(|explorer, _, _, cx| explorer.toggle_root(cx)))
@@ -56,6 +58,22 @@ impl Explorer {
                     .text_ellipsis()
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(project_name),
+            )
+            .child(
+                header_button("new-file", "icons/file-plus.svg", "New File…").on_click(
+                    cx.listener(|explorer, _, window, cx| {
+                        cx.stop_propagation();
+                        explorer.new_file(&NewFile, window, cx)
+                    }),
+                ),
+            )
+            .child(
+                header_button("new-folder", "icons/folder-plus.svg", "New Folder…").on_click(
+                    cx.listener(|explorer, _, window, cx| {
+                        cx.stop_propagation();
+                        explorer.new_folder(&NewFolder, window, cx)
+                    }),
+                ),
             )
             .child(
                 header_button("refresh", "icons/refresh-cw.svg", "Refresh Explorer").on_click(

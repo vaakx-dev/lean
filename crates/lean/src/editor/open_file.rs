@@ -25,6 +25,7 @@ pub(super) struct OpenFile {
     pub(super) kind: TabKind,
     pub(super) dirty: bool,
     pub(super) deleted: bool,
+    pub(super) preview: bool,
     pub(super) version: u64,
     pub(super) disk: DiskState,
     pub(super) view: AnyFileView,
@@ -88,6 +89,7 @@ impl OpenFile {
             kind,
             dirty: false,
             deleted: false,
+            preview: false,
             version: 0,
             disk,
             view,
@@ -120,8 +122,9 @@ impl EditorArea {
                     return;
                 }
                 let dirty = file.view.differs_from_saved(cx);
-                if file.dirty != dirty {
+                if file.dirty != dirty || (dirty && file.preview) {
                     file.dirty = dirty;
+                    file.preview &= !dirty;
                     cx.notify();
                 }
                 cx.emit(EditorAreaEvent::FileEdited(file.path.clone()));

@@ -3,11 +3,10 @@ use std::path::Path;
 use gpui_kit::component::highlighter::{LanguageRegistry, SyntaxHighlighter};
 
 use crate::files::Language;
-
-const HIGHLIGHT_SIZE_LIMIT: usize = 4 * 1024 * 1024;
+use crate::files::settings::highlight_limit_bytes;
 
 pub(super) fn language_for(path: &Path, content_length: usize) -> Language {
-    if content_length > HIGHLIGHT_SIZE_LIMIT {
+    if content_length > highlight_limit_bytes() {
         Language::PLAIN
     } else {
         Language::for_path(path)

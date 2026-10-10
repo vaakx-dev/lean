@@ -9,6 +9,7 @@ use gpui_kit::{
 
 use super::{NewFile, NewFolder, RenameSelected};
 use crate::explorer::{Explorer, VisibleEntry};
+use crate::files::file_name;
 
 pub(super) enum EditKind {
     NewFile,
@@ -28,11 +29,16 @@ pub(in crate::explorer) struct InlineEdit {
 }
 
 impl Explorer {
-    pub(super) fn new_file(&mut self, _: &NewFile, window: &mut Window, cx: &mut Context<Self>) {
+    pub(in crate::explorer) fn new_file(
+        &mut self,
+        _: &NewFile,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.start_create(EditKind::NewFile, window, cx);
     }
 
-    pub(super) fn new_folder(
+    pub(in crate::explorer) fn new_folder(
         &mut self,
         _: &NewFolder,
         window: &mut Window,
@@ -53,7 +59,7 @@ impl Explorer {
         let Some(folder) = entry.path.parent().map(Path::to_path_buf) else {
             return;
         };
-        let name = entry.name.clone();
+        let name = file_name(&entry.path);
         let selection = 0..stem_length(&name, entry.is_dir);
         let kind = EditKind::Rename {
             path: entry.path.clone(),
@@ -118,6 +124,9 @@ impl Explorer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(previous) = self.editing.take() {
+            self.close_edit(&previous, window, cx);
+        }
         let input = cx.new(|cx| InputState::new(window, cx).context_menu(false));
         input.update(cx, |input, cx| {
             input.set_value(name, window, cx);

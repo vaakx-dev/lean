@@ -4,6 +4,7 @@ mod geometry;
 mod interaction;
 mod refresh;
 mod rows;
+mod style;
 mod viewport;
 
 use std::ops::Range;
@@ -12,11 +13,14 @@ use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::component::{ActiveTheme as _, Theme};
 use gpui_kit::*;
 
+use crate::editor::settings::MinimapSlider;
+use crate::settings::Settings;
 use chunks::Chunks;
 use element::MinimapElement;
-use geometry::{Geometry, WIDTH};
+use geometry::Geometry;
 use interaction::Drag;
 use refresh::{Refresh, Styling};
+use style::{MinimapStyle, minimap_width};
 use viewport::EditorViewport;
 
 const SLIDER_OPACITY: f32 = 0.06;
@@ -29,9 +33,11 @@ pub(crate) struct Minimap {
     height: Pixels,
     chunks: Chunks,
     refresh: Refresh,
+    refresh_pending: bool,
+    style: MinimapStyle,
     hovered: bool,
     drag: Option<Drag>,
-    _subscriptions: [Subscription; 3],
+    _subscriptions: [Subscription; 4],
 }
 
 impl Minimap {
@@ -50,6 +56,7 @@ impl Minimap {
                 minimap.sync_editor_later(cx);
                 cx.notify();
             }),
+            cx.observe_global::<Settings>(|minimap, cx| minimap.sync_style(cx)),
         ];
         let state = editor.read(cx);
         let viewport = EditorViewport::read(state);
@@ -60,6 +67,8 @@ impl Minimap {
             height: px(0.),
             chunks: Chunks::default(),
             refresh,
+            refresh_pending: false,
+            style: MinimapStyle::read(cx),
             hovered: false,
             drag: None,
             _subscriptions: subscriptions,
@@ -70,15 +79,18 @@ impl Minimap {
         let editor = self.editor.read(cx);
         let viewport = EditorViewport::read(editor);
         let styling = Styling::read(editor);
-        if viewport != self.viewport {
+        let restyled = self.refresh.sync_styling(styling);
+        let moved = viewport != self.viewport;
+        if moved {
             self.viewport = viewport;
             if let Some(viewport) = viewport {
                 self.chunks.drop_past(viewport.line_count);
             }
             cx.notify();
         }
-        self.refresh.sync_styling(styling);
-        self.request_refresh(cx);
+        if moved || restyled {
+            self.request_refresh(cx);
+        }
     }
 
     fn sync_editor_later(&self, cx: &mut Context<Self>) {
@@ -90,15 +102,40 @@ impl Minimap {
         });
     }
 
-    fn set_height(&mut self, height: Pixels, cx: &mut Context<Self>) {
-        self.height = height;
-        self.sync_editor(cx);
+    fn sync_style(&mut self, cx: &mut Context<Self>) {
+        let style = MinimapStyle::read(cx);
+        if style == self.style {
+            return;
+        }
+        if style.changes_rows(&self.style) {
+            self.refresh.restyle();
+        }
+        self.style = style;
+        self.request_refresh(cx);
+        cx.notify();
+    }
+
+    fn request_refresh(&mut self, cx: &mut Context<Self>) {
+        if !self.refresh_pending {
+            self.refresh_pending = true;
+            cx.notify();
+        }
+    }
+
+    fn painted(&mut self, height: Pixels, cx: &mut Context<Self>) {
+        if height != self.height {
+            self.height = height;
+            self.sync_editor(cx);
+        }
+        self.refresh_pending = false;
+        self.refresh_if_needed(cx);
     }
 
     fn visible_lines(&self) -> Option<Range<usize>> {
         let viewport = self.viewport?;
-        (self.height > px(0.))
-            .then(|| Geometry::with_height(self.height, &viewport).visible_lines())
+        (self.height > px(0.)).then(|| {
+            Geometry::with_height(self.height, &viewport, self.style.line_height).visible_lines()
+        })
     }
 
     fn wanted_lines(&self) -> Option<Range<usize>> {
@@ -106,6 +143,16 @@ impl Minimap {
         let line_count = self.viewport?.line_count;
         let margin = visible.len();
         Some(visible.start.saturating_sub(margin)..(visible.end + margin).min(line_count))
+    }
+
+    fn slider_color(&self, cx: &App) -> Option<Hsla> {
+        let active = self.drag.is_some() || self.hovered;
+        let shown = match self.style.slider {
+            MinimapSlider::Always => true,
+            MinimapSlider::Hover => active,
+            MinimapSlider::Never => false,
+        };
+        shown.then(|| cx.theme().foreground.opacity(self.slider_opacity()))
     }
 
     fn slider_opacity(&self) -> f32 {
@@ -119,21 +166,25 @@ impl Minimap {
     }
 }
 
-pub(crate) fn render_minimap(minimap: &Entity<Minimap>) -> impl IntoElement {
-    minimap
-        .clone()
-        .cached(StyleRefinement::default().w(WIDTH).h_full().flex_shrink_0())
+pub(crate) fn render_minimap(minimap: &Entity<Minimap>, cx: &App) -> impl IntoElement {
+    minimap.clone().cached(
+        StyleRefinement::default()
+            .w(minimap_width(cx))
+            .h_full()
+            .flex_shrink_0(),
+    )
 }
 
 impl Render for Minimap {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let slider_color = cx.theme().foreground.opacity(self.slider_opacity());
-        div().size_full().child(MinimapElement::new(
-            cx.entity(),
-            self.chunks.rows(),
-            self.viewport,
-            self.height,
-            slider_color,
-        ))
+        div().size_full().child(MinimapElement {
+            minimap: cx.entity(),
+            rows: self.chunks.rows(),
+            viewport: self.viewport,
+            height: self.height,
+            style: self.style,
+            slider_color: self.slider_color(cx),
+            refresh_pending: self.refresh_pending,
+        })
     }
 }

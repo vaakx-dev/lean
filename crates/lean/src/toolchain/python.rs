@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::Toolchain;
+use super::discovery::DiscoveryOptions;
 
 const LANGUAGE: &str = "python";
 
@@ -15,10 +16,14 @@ const PYTHON_EXECUTABLE: &str = "python";
 #[cfg(windows)]
 const PYTHON_EXECUTABLE: &str = "python.exe";
 
-pub(super) fn discover(project_root: &Path) -> Vec<Toolchain> {
-    let mut toolchains = venv::discover(project_root);
-    toolchains.extend(conda::discover(project_root));
-    toolchains.extend(pyenv::discover());
+pub(super) fn discover(project_root: &Path, options: &DiscoveryOptions) -> Vec<Toolchain> {
+    let mut toolchains = venv::discover(project_root, options.venv_depth);
+    toolchains.extend(venv::discover_inherited());
+    for folder in &options.search_paths {
+        toolchains.extend(venv::discover(folder, 1));
+    }
+    toolchains.extend(conda::discover(project_root, &options.search_paths));
+    toolchains.extend(pyenv::discover(options.pyenv_root.as_deref()));
     toolchains
 }
 

@@ -1,4 +1,5 @@
 mod cell;
+mod cell_options;
 mod document;
 mod editing;
 mod execution;
@@ -6,6 +7,9 @@ mod kernel;
 mod keymap;
 mod output;
 mod rows;
+mod saved;
+pub(crate) mod settings;
+mod settings_sync;
 mod status;
 mod toolbar;
 mod view;
@@ -22,9 +26,12 @@ use super::{FileViewEvent, Plugin, PluginContext};
 use crate::editor::file_text::LineEnding;
 use crate::toolchain::{Toolchains, ToolchainsEvent};
 use cell::{Cell, CellId};
+use cell_options::{CellFont, cell_font};
 use document::Document;
 use execution::Session;
 use keymap::bind_keys;
+use saved::SavedCell;
+use settings::SAVE_OUTPUTS;
 use status::KernelStatus;
 
 const LIST_OVERDRAW: Pixels = px(600.);
@@ -47,6 +54,8 @@ pub(crate) struct Notebook {
     language: String,
     fields: Map<String, Value>,
     cells: Vec<Cell>,
+    cell_font: CellFont,
+    saved: Vec<SavedCell>,
     selected: Option<CellId>,
     next_cell_id: usize,
     toolchains: Entity<Toolchains>,
@@ -58,6 +67,7 @@ pub(crate) struct Notebook {
     list_state: ListState,
     _toolchains_subscription: Subscription,
     _quit_subscription: Subscription,
+    _settings: Vec<Subscription>,
 }
 
 impl EventEmitter<FileViewEvent> for Notebook {}
@@ -77,12 +87,15 @@ impl Notebook {
                 notebook.handle_toolchains_event(event, cx)
             });
         let quit_subscription = cx.on_app_quit(|notebook, _| notebook.kill_kernel());
+        let setting_observers = Self::observe_settings(window, cx);
         let mut notebook = Self {
             folder,
             line_ending,
             language,
             fields: document.fields,
             cells: Vec::new(),
+            cell_font: cell_font(cx),
+            saved: Vec::new(),
             selected: None,
             next_cell_id: 0,
             toolchains,
@@ -94,6 +107,7 @@ impl Notebook {
             list_state: ListState::new(0, ListAlignment::Top, LIST_OVERDRAW),
             _toolchains_subscription: toolchains_subscription,
             _quit_subscription: quit_subscription,
+            _settings: setting_observers,
         };
         let cells = document
             .cells
@@ -101,14 +115,20 @@ impl Notebook {
             .map(|data| notebook.create_cell(data, window, cx))
             .collect();
         notebook.cells = cells;
+        notebook.saved = notebook.saved_cells(cx);
         notebook.splice_rows(0..0, 0..notebook.cells.len() + 1, cx);
         notebook.selected = notebook.cells.first().map(|cell| cell.id);
         notebook
     }
 
     fn content(&self, cx: &App) -> Result<String> {
+        let with_outputs = SAVE_OUTPUTS.get(cx);
         Document {
-            cells: self.cells.iter().map(|cell| cell.to_data(cx)).collect(),
+            cells: self
+                .cells
+                .iter()
+                .map(|cell| cell.to_data(with_outputs, cx))
+                .collect(),
             fields: self.fields.clone(),
         }
         .serialize()

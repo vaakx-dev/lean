@@ -3,11 +3,15 @@ use gpui_kit::*;
 
 use crate::plugins::notebook::Notebook;
 use crate::plugins::notebook::cell::{Cell, RunState};
+use crate::plugins::notebook::settings::SHOW_RUN_TIME;
 
 pub(super) fn render_run_status(cell: &Cell, cx: &Context<Notebook>) -> Option<Div> {
     let RunState::Done { elapsed, success } = cell.run_state else {
         return None;
     };
+    if !SHOW_RUN_TIME.get(cx) {
+        return None;
+    }
     let theme = cx.theme();
     let (icon, color) = if success {
         ("icons/check.svg", theme.success)

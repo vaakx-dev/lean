@@ -1,8 +1,11 @@
 use anyhow::{Result, bail};
+use serde::Serialize as _;
+use serde_json::ser::{PrettyFormatter, Serializer};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
 const DEFAULT_LANGUAGE: &str = "python";
+const NBFORMAT_INDENT: &[u8] = b" ";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CellKind {
@@ -12,11 +15,12 @@ pub(crate) enum CellKind {
 }
 
 impl CellKind {
-    fn from_name(name: &str) -> CellKind {
+    fn from_name(name: &str) -> Option<CellKind> {
         match name {
-            "code" => CellKind::Code,
-            "markdown" => CellKind::Markdown,
-            _ => CellKind::Raw,
+            "code" => Some(CellKind::Code),
+            "markdown" => Some(CellKind::Markdown),
+            "raw" => Some(CellKind::Raw),
+            _ => None,
         }
     }
 
@@ -35,6 +39,7 @@ pub(crate) struct CellData {
     pub(crate) outputs: Vec<Value>,
     pub(crate) execution_count: Option<u64>,
     pub(crate) fields: Map<String, Value>,
+    pub(crate) verbatim: Option<Value>,
 }
 
 impl CellData {
@@ -51,6 +56,18 @@ impl CellData {
             outputs: Vec::new(),
             execution_count: None,
             fields,
+            verbatim: None,
+        }
+    }
+
+    fn unknown(value: Value) -> CellData {
+        CellData {
+            kind: CellKind::Raw,
+            source: value.get("source").map(join_text).unwrap_or_default(),
+            outputs: Vec::new(),
+            execution_count: None,
+            fields: Map::new(),
+            verbatim: Some(value),
         }
     }
 }
@@ -72,7 +89,7 @@ impl Document {
             bail!("the notebook has no cell list (only nbformat 4 is supported)");
         };
         Ok(Document {
-            cells: cells.into_iter().filter_map(parse_cell).collect(),
+            cells: cells.into_iter().map(parse_cell).collect(),
             fields,
         })
     }
@@ -111,21 +128,50 @@ impl Document {
     pub(crate) fn serialize(mut self) -> Result<String> {
         let cells = self.cells.into_iter().map(cell_json).collect();
         self.fields.insert("cells".into(), Value::Array(cells));
-        let mut content = serde_json::to_string_pretty(&Value::Object(self.fields))?;
+        let mut document = Value::Object(self.fields);
+        document.sort_all_objects();
+        let mut bytes = Vec::new();
+        let formatter = PrettyFormatter::with_indent(NBFORMAT_INDENT);
+        document.serialize(&mut Serializer::with_formatter(&mut bytes, formatter))?;
+        let mut content = String::from_utf8(bytes)?;
         content.push('\n');
         Ok(content)
     }
 }
 
-fn parse_cell(value: Value) -> Option<CellData> {
-    let Value::Object(mut fields) = value else {
-        return None;
-    };
-    let kind = CellKind::from_name(fields.remove("cell_type")?.as_str()?);
+fn parse_cell(value: Value) -> CellData {
+    let kind = value
+        .get("cell_type")
+        .and_then(Value::as_str)
+        .and_then(CellKind::from_name);
+    match (kind, value) {
+        (Some(kind), Value::Object(fields)) => known_cell(kind, fields),
+        (_, value) => CellData::unknown(value),
+    }
+}
+
+fn known_cell(kind: CellKind, mut fields: Map<String, Value>) -> CellData {
+    fields.remove("cell_type");
     let source = fields
         .remove("source")
         .map(|source| join_text(&source))
         .unwrap_or_default();
+    let (outputs, execution_count) = if kind == CellKind::Code {
+        code_results(&mut fields)
+    } else {
+        (Vec::new(), None)
+    };
+    CellData {
+        kind,
+        source,
+        outputs,
+        execution_count,
+        fields,
+        verbatim: None,
+    }
+}
+
+fn code_results(fields: &mut Map<String, Value>) -> (Vec<Value>, Option<u64>) {
     let outputs = match fields.remove("outputs") {
         Some(Value::Array(outputs)) => outputs,
         _ => Vec::new(),
@@ -133,16 +179,13 @@ fn parse_cell(value: Value) -> Option<CellData> {
     let execution_count = fields
         .remove("execution_count")
         .and_then(|count| count.as_u64());
-    Some(CellData {
-        kind,
-        source,
-        outputs,
-        execution_count,
-        fields,
-    })
+    (outputs, execution_count)
 }
 
 fn cell_json(cell: CellData) -> Value {
+    if let Some(verbatim) = cell.verbatim {
+        return verbatim;
+    }
     let mut fields = cell.fields;
     fields.insert("cell_type".into(), Value::String(cell.kind.name().into()));
     fields.insert("source".into(), split_lines(&cell.source));

@@ -1,32 +1,27 @@
-use gpui_kit::{App, KeyBinding};
+mod apply;
+mod defaults;
+mod font_size;
+mod names;
+mod overrides;
+mod registry;
+mod rows;
 
-use super::actions::{
-    CloseActiveEditor, NextEditor, OpenFolder, OpenRecent, PreviousEditor, Quit, SaveActiveEditor,
-    ShowPanel, ToggleSidebar, ToggleTerminal,
-};
-use crate::{explorer, terminal};
+use gpui_kit::App;
+
+pub(crate) use defaults::{GoToLine, RevealActiveFile};
+pub(crate) use overrides::{KEYMAP, remove_keys, reset_keys, set_keys};
+#[cfg(any(feature = "git", feature = "search"))]
+pub(crate) use registry::bind_command;
+pub(crate) use registry::bind_defaults;
+pub(crate) use rows::{Row, conflicts, rows};
 
 pub(super) fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("ctrl-q", Quit, None),
-        KeyBinding::new("ctrl-o", OpenFolder, None),
-        KeyBinding::new("ctrl-r", OpenRecent, None),
-        KeyBinding::new("ctrl-s", SaveActiveEditor, None),
-        KeyBinding::new("ctrl-w", CloseActiveEditor, None),
-        KeyBinding::new("ctrl-pagedown", NextEditor, None),
-        KeyBinding::new("ctrl-pageup", PreviousEditor, None),
-        KeyBinding::new("ctrl-tab", NextEditor, None),
-        KeyBinding::new("ctrl-shift-tab", PreviousEditor, None),
-        KeyBinding::new("ctrl-b", ToggleSidebar, None),
-        KeyBinding::new("ctrl-`", ToggleTerminal, None),
-        KeyBinding::new(
-            "ctrl-shift-e",
-            ShowPanel {
-                id: explorer::PANEL.id,
-            },
-            None,
-        ),
-    ]);
-    explorer::bind_keys(cx);
-    terminal::bind_keys(cx);
+    font_size::init(cx);
+    defaults::bind(cx);
+    KEYMAP
+        .observe_app(cx, |_, cx| {
+            apply::apply(cx);
+            super::set_menus(cx);
+        })
+        .detach();
 }

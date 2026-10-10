@@ -18,10 +18,10 @@ impl TextFile {
                 .child(cursor)
                 .into_any_element(),
             status_item("indent", theme)
-                .child("Spaces: 4")
+                .child(self.options.indent_label())
                 .into_any_element(),
             status_item("encoding", theme)
-                .child("UTF-8")
+                .child(self.encoding_label())
                 .into_any_element(),
             status_item("line-ending", theme)
                 .child(self.line_ending.label())
@@ -35,5 +35,13 @@ impl TextFile {
                 .map(IntoElement::into_any_element),
         );
         items
+    }
+
+    fn encoding_label(&self) -> &'static str {
+        if self.byte_order_mark {
+            "UTF-8 with BOM"
+        } else {
+            "UTF-8"
+        }
     }
 }

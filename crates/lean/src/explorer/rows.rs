@@ -5,12 +5,10 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::file_operations::InlineEdit;
+use super::settings::{FileIcons, OpenOn};
 use super::{Explorer, VisibleEntry, chevron_icon};
 use crate::files::file_icon;
 use crate::plugins::{FileDecoration, PanelEvent};
-
-const ROW_HEIGHT: Pixels = px(26.);
-const INDENT: Pixels = px(10.);
 
 impl Explorer {
     pub(super) fn render_rows(
@@ -44,16 +42,18 @@ impl Explorer {
         let is_editing = edit.is_some();
         let is_selected =
             !is_editing && !entry.is_draft && self.selected.as_ref() == Some(&entry.path);
+        let is_dimmed = entry.is_ignored && self.options.dims_ignored();
         h_flex()
             .id(index)
-            .h(ROW_HEIGHT)
+            .h(self.options.row_height)
             .w_full()
-            .pl(px(12.) + INDENT * entry.depth as f32)
+            .pl(px(12.) + self.options.indent * entry.depth as f32)
             .pr_3()
             .gap_1p5()
             .rounded(theme.radius)
             .border_1()
             .border_color(transparent_black())
+            .when(is_dimmed, |row| row.text_color(theme.muted_foreground))
             .when(!is_editing, |row| {
                 row.cursor_pointer()
                     .hover(|style| style.bg(theme.list_hover))
@@ -82,9 +82,11 @@ impl Explorer {
                     .children(decoration.map(decoration_marker)),
             )
             .when(!is_editing, |row| {
-                row.on_click(cx.listener(move |explorer, _, window, cx| {
-                    explorer.click_entry(index, window, cx)
-                }))
+                row.on_click(
+                    cx.listener(move |explorer, event: &ClickEvent, window, cx| {
+                        explorer.click_entry(index, event.click_count(), window, cx)
+                    }),
+                )
                 .on_mouse_down(
                     MouseButton::Right,
                     cx.listener(move |explorer, _, _, cx| {
@@ -95,17 +97,30 @@ impl Explorer {
             .into_any_element()
     }
 
-    fn leading_icon(&self, entry: &VisibleEntry, edit: Option<&InlineEdit>, cx: &App) -> Icon {
+    fn leading_icon(
+        &self,
+        entry: &VisibleEntry,
+        edit: Option<&InlineEdit>,
+        cx: &App,
+    ) -> AnyElement {
         if entry.is_dir {
             let is_expanded = !entry.is_draft && self.expanded.contains(&entry.path);
-            Icon::empty()
+            return Icon::empty()
                 .path(chevron_icon(is_expanded))
                 .size_4()
                 .text_color(cx.theme().muted_foreground)
-        } else if let Some(edit) = edit.filter(|_| entry.is_draft) {
-            file_icon(&edit.draft_name(cx))
-        } else {
-            file_icon(&entry.name)
+                .into_any_element();
+        }
+        let name = match edit.filter(|_| entry.is_draft) {
+            Some(edit) => edit.draft_name(cx),
+            None => entry.name.clone(),
+        };
+        match self.options.file_icons {
+            FileIcons::Coloured => file_icon(&name).into_any_element(),
+            FileIcons::Monochrome => file_icon(&name)
+                .text_color(cx.theme().muted_foreground)
+                .into_any_element(),
+            FileIcons::None => div().size_4().flex_shrink_0().into_any_element(),
         }
     }
 
@@ -117,7 +132,13 @@ impl Explorer {
         }
     }
 
-    fn click_entry(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    fn click_entry(
+        &mut self,
+        index: usize,
+        click_count: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(entry) = self.visible.get(index).filter(|entry| !entry.is_draft) else {
             return;
         };
@@ -127,8 +148,10 @@ impl Explorer {
         self.selected = Some(path.clone());
         if is_dir {
             self.toggle_folder(path, cx);
-        } else {
+        } else if click_count > 1 || self.options.open_on == OpenOn::SingleClick {
             cx.emit(PanelEvent::OpenFile(path));
+            cx.notify();
+        } else {
             cx.notify();
         }
     }

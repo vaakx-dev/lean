@@ -1,15 +1,14 @@
 mod keymap;
 mod keys;
+mod passthrough;
 
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::TermMode;
-use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::{Context, KeyDownEvent, MouseDownEvent, ScrollWheelEvent, Window};
+use gpui_kit::{Context, KeyDownEvent, ScrollWheelEvent, Window};
 
-use super::render::line_height;
 use super::view::TerminalView;
 
-pub(crate) use keymap::{KEY_CONTEXT, Paste, bind_keys};
+pub(crate) use keymap::{CopySelection, KEY_CONTEXT, Paste, bind_keys};
 
 const RESTART_KEY: &str = "enter";
 
@@ -34,8 +33,10 @@ impl TerminalView {
         if let Some(scroll) = keys::history_scroll(keystroke) {
             session.scroll(scroll);
         } else if let Some(bytes) = keys::keystroke_bytes(keystroke, session.mode()) {
+            session.clear_selection();
             session.scroll(Scroll::Bottom);
             session.write(bytes);
+            self.show_cursor(cx);
         } else {
             return;
         }
@@ -52,7 +53,7 @@ impl TerminalView {
         let Some(session) = self.session() else {
             return;
         };
-        let line_height = line_height(cx.theme().mono_font_size);
+        let line_height = session.size().line_height;
         self.scroll_remainder += event.delta.pixel_delta(line_height).y / line_height;
         let whole_lines = self.scroll_remainder.trunc();
         self.scroll_remainder -= whole_lines;
@@ -79,17 +80,10 @@ impl TerminalView {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
+        session.clear_selection();
         session.scroll(Scroll::Bottom);
         session.write(keys::paste_bytes(&text, session.mode()));
+        self.show_cursor(cx);
         cx.notify();
-    }
-
-    pub(super) fn focus_on_click(
-        &mut self,
-        _: &MouseDownEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        window.focus(&self.focus_handle, cx);
     }
 }

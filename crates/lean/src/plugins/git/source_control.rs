@@ -14,6 +14,7 @@ mod placeholder;
 mod row_actions;
 mod rows;
 mod section_row;
+mod setting_observers;
 mod view;
 
 use std::collections::HashSet;
@@ -26,9 +27,10 @@ use gpui_kit::*;
 
 use super::git_project::{GitEvent, GitProject};
 use crate::plugins::PanelEvent;
+use crate::plugins::git::settings::{COMPACT_FOLDERS, SHOW_HISTORY, VIEW_MODE, ViewMode};
 use changes::{ChangeGroup, Changes};
 use history::History;
-use rows::{Row, Section, ViewMode};
+use rows::{Row, Section};
 
 pub(crate) use keymap::bind_keys;
 pub(crate) use panel::PANEL;
@@ -39,8 +41,11 @@ pub(crate) struct SourceControl {
     commit_message: Entity<TextareaState>,
     changes: Changes,
     history: History,
+    has_more_history: bool,
     rows: Vec<Row>,
     view_mode: ViewMode,
+    compact_folders: bool,
+    show_history: bool,
     collapsed_sections: HashSet<Section>,
     collapsed_folders: HashSet<(ChangeGroup, PathBuf)>,
     committing: bool,
@@ -48,6 +53,7 @@ pub(crate) struct SourceControl {
     pending_git_operations: usize,
     scroll_handle: UniformListScrollHandle,
     _git_subscription: Subscription,
+    _settings: Vec<Subscription>,
 }
 
 impl EventEmitter<PanelEvent> for SourceControl {}
@@ -75,8 +81,11 @@ impl SourceControl {
             commit_message,
             changes: Changes::default(),
             history: History::default(),
+            has_more_history: false,
             rows: Vec::new(),
-            view_mode: ViewMode::Tree,
+            view_mode: VIEW_MODE.get(cx),
+            compact_folders: COMPACT_FOLDERS.get(cx),
+            show_history: SHOW_HISTORY.get(cx),
             collapsed_sections: HashSet::new(),
             collapsed_folders: HashSet::new(),
             committing: false,
@@ -84,6 +93,7 @@ impl SourceControl {
             pending_git_operations: 0,
             scroll_handle: UniformListScrollHandle::new(),
             _git_subscription: git_subscription,
+            _settings: Self::observe_settings(cx),
         };
         source_control.reload(cx);
         source_control
@@ -93,9 +103,11 @@ impl SourceControl {
         if let Some(git) = self.git.read(cx).state() {
             self.changes = Changes::collect(git);
             self.history = History::build(&git.history);
+            self.has_more_history = git.has_more_history;
         } else {
             self.changes = Changes::default();
             self.history = History::default();
+            self.has_more_history = false;
         }
         self.rebuild_rows();
         cx.notify();

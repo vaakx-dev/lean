@@ -1,3 +1,5 @@
+mod line_prompt;
+
 use std::path::PathBuf;
 
 use gpui_kit::*;

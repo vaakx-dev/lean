@@ -1,5 +1,8 @@
+mod config;
 mod grid_size;
 mod listener;
+mod process;
+mod selection;
 mod shell;
 
 use std::borrow::Cow;
@@ -17,10 +20,13 @@ use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::tty;
 use futures::channel::mpsc::UnboundedSender;
+use gpui_kit::App;
 
+pub(crate) use config::term_config;
 pub(crate) use grid_size::GridSize;
 use listener::EventProxy;
-pub(crate) use shell::{ShellKind, shell_kind, shell_name};
+use process::ShellProcess;
+pub(crate) use shell::{ShellKind, default_shell_program, shell_kind, shell_name};
 
 const WINDOW_ID: u64 = 0;
 
@@ -28,6 +34,7 @@ pub(crate) struct TerminalSession {
     term: Arc<FairMutex<Term<EventProxy>>>,
     sender: EventLoopSender,
     size: Cell<GridSize>,
+    process: ShellProcess,
 }
 
 impl TerminalSession {
@@ -35,12 +42,14 @@ impl TerminalSession {
         working_directory: &Path,
         environment: &HashMap<String, String>,
         events: UnboundedSender<Event>,
+        cx: &App,
     ) -> io::Result<Self> {
         let size = GridSize::default();
         let listener = EventProxy::new(events);
-        let options = shell::shell_options(working_directory, environment);
+        let options = shell::shell_options(working_directory, environment, cx);
         let pty = tty::new(&options, size.window_size(), WINDOW_ID)?;
-        let term = Term::new(Config::default(), &size, listener.clone());
+        let process = ShellProcess::of(&pty);
+        let term = Term::new(term_config(cx), &size, listener.clone());
         let term = Arc::new(FairMutex::new(term));
         let event_loop = EventLoop::new(term.clone(), listener, pty, options.drain_on_exit, false)?;
         let sender = event_loop.channel();
@@ -49,6 +58,7 @@ impl TerminalSession {
             term,
             sender,
             size: Cell::new(size),
+            process,
         })
     }
 
@@ -62,6 +72,18 @@ impl TerminalSession {
 
     pub(crate) fn size(&self) -> GridSize {
         self.size.get()
+    }
+
+    pub(crate) fn cursor_blinks(&self) -> bool {
+        self.term.lock().cursor_style().blinking
+    }
+
+    pub(crate) fn is_busy(&self) -> bool {
+        self.process.has_children()
+    }
+
+    pub(crate) fn set_config(&self, config: Config) {
+        self.term.lock().set_options(config);
     }
 
     pub(crate) fn write(&self, bytes: impl Into<Cow<'static, [u8]>>) {

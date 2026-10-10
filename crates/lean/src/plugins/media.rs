@@ -2,6 +2,7 @@ mod checkerboard;
 mod formats;
 mod image_viewer;
 mod picture;
+pub(crate) mod settings;
 mod svg_viewer;
 
 use gpui_kit::App;

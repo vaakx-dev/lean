@@ -1,7 +1,9 @@
 mod decorations;
 mod diff_views;
 mod gutter;
+mod history;
 mod refresh;
+mod setting_observers;
 
 use std::path::PathBuf;
 
@@ -11,6 +13,7 @@ use gpui_kit::*;
 use super::diff::DiffView;
 use super::repo::{GitReadError, GitState};
 use crate::editor::{EditorArea, EditorAreaEvent};
+use crate::plugins::git::settings::history_page_size;
 use crate::plugins::{FileDecorations, WorkspaceContext};
 use crate::project::{FilesChanged, Project, ProjectEvent};
 use gutter::{GutterScope, GutterSync};
@@ -29,7 +32,9 @@ pub(crate) struct GitProject {
     refresh: Refresh,
     gutter: GutterSync,
     diff_views: Vec<WeakEntity<DiffView>>,
+    history_limit: usize,
     _subscriptions: [Subscription; 4],
+    _settings: Vec<Subscription>,
 }
 
 impl EventEmitter<GitEvent> for GitProject {}
@@ -72,7 +77,9 @@ impl GitProject {
             refresh: Refresh::default(),
             gutter: GutterSync::default(),
             diff_views: Vec::new(),
+            history_limit: history_page_size(cx),
             _subscriptions: subscriptions,
+            _settings: Self::observe_settings(cx),
         };
         git.refresh(cx);
         git
@@ -93,7 +100,8 @@ impl GitProject {
     fn project_event(&mut self, event: &ProjectEvent, cx: &mut Context<Self>) {
         match event {
             ProjectEvent::Activated if self.state.is_some() => {}
-            ProjectEvent::Activated | ProjectEvent::FilesTouched => self.refresh(cx),
+            ProjectEvent::Activated => self.refresh(cx),
+            ProjectEvent::FilesTouched => self.schedule_refresh(cx),
         }
     }
 
@@ -103,7 +111,7 @@ impl GitProject {
             EditorAreaEvent::FileEdited(path) => {
                 self.schedule_gutter(GutterScope::File(path.clone()), cx)
             }
-            EditorAreaEvent::Saved => self.refresh(cx),
+            EditorAreaEvent::Saved => self.schedule_refresh(cx),
             _ => {}
         }
     }

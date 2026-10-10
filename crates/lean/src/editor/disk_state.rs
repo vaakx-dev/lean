@@ -1,13 +1,27 @@
+use futures::future::Shared;
 use gpui_kit::Task;
 
 use super::disk_io::{DiskFile, DiskStamp};
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SaveOutcome {
+    Saved,
+    Failed,
+    ChangedOnDisk,
+}
+
+pub(super) type SaveInFlight = Shared<Task<SaveOutcome>>;
+
 pub(super) struct DiskState {
     pub(super) saved_hash: u64,
     pub(super) stamp: Option<DiskStamp>,
+    pub(super) written: Option<DiskStamp>,
     pub(super) conflict: bool,
-    pub(super) saving: bool,
+    pub(super) saving: Option<SaveInFlight>,
+    pub(super) changed_while_saving: bool,
+    pub(super) kept_on_exit: bool,
     pub(super) _check: Task<()>,
+    pub(super) _auto_save: Task<()>,
 }
 
 impl DiskState {
@@ -15,9 +29,7 @@ impl DiskState {
         Self {
             saved_hash: disk.hash,
             stamp: Some(disk.stamp),
-            conflict: false,
-            saving: false,
-            _check: Task::ready(()),
+            ..Self::detached()
         }
     }
 
@@ -25,15 +37,32 @@ impl DiskState {
         Self {
             saved_hash: 0,
             stamp: None,
+            written: None,
             conflict: false,
-            saving: false,
+            saving: None,
+            changed_while_saving: false,
+            kept_on_exit: false,
             _check: Task::ready(()),
+            _auto_save: Task::ready(()),
         }
+    }
+
+    pub(super) fn is_saving(&self) -> bool {
+        self.saving.is_some()
     }
 
     pub(super) fn reloaded(&mut self, hash: u64, stamp: DiskStamp) {
         self.saved_hash = hash;
         self.stamp = Some(stamp);
+        self.written = None;
         self.conflict = false;
+    }
+
+    pub(super) fn saved(&mut self, hash: u64, stamp: DiskStamp) {
+        self.saved_hash = hash;
+        self.stamp = Some(stamp);
+        self.written = Some(stamp);
+        self.conflict = false;
+        self.saving = None;
     }
 }
