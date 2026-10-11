@@ -9,13 +9,13 @@ pub(crate) mod settings;
 mod window;
 
 use crate::assets::Assets;
-use crate::{plugins, recent_projects, theme};
+use crate::{plugins, recent_projects, theme, updates};
 use actions::Quit;
 
 pub(crate) use cli::{LaunchTarget, launch_target_from_args};
 pub(crate) use logging::init_logging;
 pub(crate) use menus::set_menus;
-pub(crate) use quit::restart;
+pub(crate) use quit::{restart, restart_as};
 
 pub(crate) fn run(launch: LaunchTarget) {
     gpui_kit::application().with_assets(Assets).run(move |cx| {
@@ -27,6 +27,7 @@ pub(crate) fn run(launch: LaunchTarget) {
         keymap::bind_keys(cx);
         plugins::init(cx);
         recent_projects::init(cx);
+        updates::init(cx);
         menus::set_menus(cx);
 
         cx.on_action(|_: &Quit, cx| quit::quit(cx));

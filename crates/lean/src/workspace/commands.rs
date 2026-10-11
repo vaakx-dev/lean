@@ -118,7 +118,7 @@ impl Workspace {
         window.push_notification(
             format!(
                 "Lean {} — a small code editor built with GPUI.",
-                env!("CARGO_PKG_VERSION")
+                crate::updates::version_label()
             ),
             cx,
         );

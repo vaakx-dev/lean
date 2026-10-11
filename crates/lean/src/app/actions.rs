@@ -6,6 +6,7 @@ actions!(
     lean,
     [
         About,
+        CheckForUpdates,
         ClearRecentProjects,
         CloseActiveEditor,
         CollapseAllFolders,

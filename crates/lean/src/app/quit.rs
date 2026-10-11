@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use gpui_kit::component::Root;
@@ -11,9 +12,16 @@ pub(super) fn quit(cx: &mut App) {
 }
 
 pub(crate) fn restart(cx: &mut App) {
-    close_windows_then(cx, |cx| {
+    match std::env::current_exe() {
+        Ok(program) => restart_as(program, cx),
+        Err(error) => log::error!("failed to restart Lean: {error}"),
+    }
+}
+
+pub(crate) fn restart_as(program: PathBuf, cx: &mut App) {
+    close_windows_then(cx, move |cx| {
         settings::save_now();
-        match relaunch() {
+        match relaunch(&program) {
             Ok(()) => cx.quit(),
             Err(error) => log::error!("failed to restart Lean: {error}"),
         }
@@ -33,8 +41,7 @@ fn close_windows_then(cx: &mut App, then: impl FnOnce(&mut App) + 'static) {
     .detach();
 }
 
-fn relaunch() -> std::io::Result<()> {
-    let program = std::env::current_exe()?;
+fn relaunch(program: &Path) -> std::io::Result<()> {
     Command::new(program)
         .args(std::env::args_os().skip(1))
         .spawn()?;
