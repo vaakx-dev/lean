@@ -4,8 +4,8 @@ use gpui_kit::{App, Menu, MenuItem};
 use crate::{plugins, recent_projects};
 
 use super::actions::{
-    About, CloseActiveEditor, NextEditor, OpenFolder, OpenSettings, PreviousEditor, Quit,
-    SaveActiveEditor, ShowPanel, ToggleSidebar, ToggleTerminal,
+    About, CheckForUpdates, CloseActiveEditor, NextEditor, OpenFolder, OpenSettings,
+    PreviousEditor, Quit, SaveActiveEditor, ShowPanel, ToggleSidebar, ToggleTerminal,
 };
 
 pub(crate) fn set_menus(cx: &mut App) {
@@ -46,7 +46,10 @@ fn app_menus(cx: &App) -> Vec<Menu> {
             MenuItem::action("Previous Editor", PreviousEditor),
         ]),
         Menu::new("Terminal").items([MenuItem::action("Toggle Terminal", ToggleTerminal)]),
-        Menu::new("Help").items([MenuItem::action("About Lean", About)]),
+        Menu::new("Help").items([
+            MenuItem::action("Check for Updates…", CheckForUpdates),
+            MenuItem::action("About Lean", About),
+        ]),
     ]
 }
 

@@ -8,16 +8,18 @@ use super::{
 };
 use crate::recent_projects::settings::{MENU_LIMIT, RECENT_LIMIT};
 use crate::settings::ui::fields::{Number, group, number, select, switch};
+use crate::updates;
 use crate::workspace::settings::RESTORE_SESSION;
 
 pub(crate) fn settings_page(_: &App) -> SettingPage {
     SettingPage::new("General")
         .icon(Icon::empty().path("icons/settings-2.svg"))
-        .description("How Lean starts, its window, and what it confirms before closing.")
+        .description("How Lean starts, its window, updates, and what it confirms before closing.")
         .group(startup_group())
         .group(window_group())
         .group(confirmations_group())
         .group(recent_projects_group())
+        .group(updates::settings::settings_group())
         .group(advanced_group())
 }
 

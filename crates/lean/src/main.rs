@@ -14,6 +14,7 @@ mod terminal;
 mod theme;
 mod toolchain;
 mod ui;
+mod updates;
 mod watcher;
 mod workspace;
 
