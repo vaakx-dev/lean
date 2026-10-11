@@ -44,13 +44,11 @@ impl TerminalView {
     fn end_flash_later(cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |view, cx| {
             cx.background_executor().timer(FLASH_DURATION).await;
-            let ended = view.update(cx, |view, cx| {
+            view.update(cx, |view, cx| {
                 view.bell.flashing = false;
                 cx.notify();
-            });
-            if let Err(error) = ended {
-                log::debug!("terminal view dropped during a visual bell: {error:#}");
-            }
+            })
+            .ok();
         })
     }
 }

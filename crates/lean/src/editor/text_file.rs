@@ -1,4 +1,3 @@
-mod language;
 mod options;
 mod status;
 mod viewer;
@@ -18,8 +17,8 @@ use crate::files::settings::SaveFormat;
 use crate::plugins::{FileView, FileViewEvent, Snapshot};
 use crate::settings::Settings;
 use crate::toolchain::Toolchains;
-use language::language_for;
 use options::EditorOptions;
+use viewer::language_for;
 
 pub(crate) use viewer::TEXT_VIEWER;
 
@@ -162,9 +161,7 @@ impl FileView for TextFile {
         let file = cx.weak_entity();
         let snapshot =
             Snapshot::new(move || line_ending.encode(String::from(&text))).on_saved(move |cx| {
-                if let Err(error) = file.update(cx, |file, _| file.saved = saved) {
-                    log::debug!("text file dropped after saving: {error:#}");
-                }
+                file.update(cx, |file, _| file.saved = saved).ok();
             });
         Some(Ok(snapshot))
     }

@@ -4,10 +4,11 @@ use gpui_kit::component::setting::{SettingGroup, SettingPage};
 
 use super::{
     COMPACT_FOLDERS, CONFIRM_DISCARD, DIFF_CONTEXT_LINES, EXPLORER_DECORATIONS,
-    EXPLORER_FOLDER_DOTS, ExplorerDecorations, GUTTER_BASE, GUTTER_ENABLED, GutterBase,
-    HISTORY_LIMIT, INCLUDE_UNTRACKED, MAX_DIFF_CONTEXT_LINES, MAX_HISTORY_LIMIT, MIN_HISTORY_LIMIT,
+    EXPLORER_FOLDER_DOTS, ExplorerDecorations, GUTTER_BASE, GUTTER_ENABLED, HISTORY_LIMIT,
+    INCLUDE_UNTRACKED, MAX_DIFF_CONTEXT_LINES, MAX_HISTORY_LIMIT, MIN_HISTORY_LIMIT,
     NOTHING_STAGED, NothingStaged, SHOW_HISTORY, STATUS_BAR_BRANCH, VIEW_MODE, ViewMode,
 };
+use crate::plugins::git::diff::DiffBase;
 use crate::settings::ui::fields::{Number, group, number, select, switch};
 
 pub(crate) fn settings_page(_: &App) -> SettingPage {
@@ -103,8 +104,8 @@ fn indicators_group() -> SettingGroup {
                 "Compare markers with",
                 "The version that change markers are measured against.",
                 [
-                    (GutterBase::Index, "Staged version (index)"),
-                    (GutterBase::Head, "Last commit (HEAD)"),
+                    (DiffBase::Index, "Staged version (index)"),
+                    (DiffBase::Staged, "Last commit (HEAD)"),
                 ],
             )
             .keywords(["gutter", "diff", "index", "head"])

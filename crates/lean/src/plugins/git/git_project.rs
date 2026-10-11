@@ -1,9 +1,7 @@
 mod decorations;
 mod diff_views;
 mod gutter;
-mod history;
 mod refresh;
-mod setting_observers;
 
 use std::path::PathBuf;
 
@@ -13,10 +11,13 @@ use gpui_kit::*;
 use super::diff::DiffView;
 use super::repo::{GitReadError, GitState};
 use crate::editor::{EditorArea, EditorAreaEvent};
-use crate::plugins::git::settings::history_page_size;
+use crate::plugins::git::settings::{
+    EXPLORER_DECORATIONS, EXPLORER_FOLDER_DOTS, GUTTER_BASE, GUTTER_ENABLED, HISTORY_LIMIT,
+    INCLUDE_UNTRACKED, SHOW_HISTORY, history_page_size,
+};
 use crate::plugins::{FileDecorations, WorkspaceContext};
 use crate::project::{FilesChanged, Project, ProjectEvent};
-use gutter::{GutterScope, GutterSync};
+use gutter::GutterSync;
 use refresh::Refresh;
 
 pub(crate) enum GitEvent {
@@ -41,17 +42,13 @@ impl EventEmitter<GitEvent> for GitProject {}
 
 impl GitProject {
     pub(super) fn start(workspace: &WorkspaceContext, _: &mut Window, cx: &mut App) -> AnyEntity {
-        Self::create(workspace, cx).into_any()
+        cx.new(|cx| Self::new(workspace, cx)).into_any()
     }
 
-    pub(super) fn for_workspace(workspace: &WorkspaceContext, cx: &mut App) -> Entity<Self> {
+    pub(super) fn for_workspace(workspace: &WorkspaceContext) -> Entity<Self> {
         workspace
             .service::<Self>()
-            .unwrap_or_else(|| Self::create(workspace, cx))
-    }
-
-    fn create(workspace: &WorkspaceContext, cx: &mut App) -> Entity<Self> {
-        cx.new(|cx| Self::new(workspace, cx))
+            .expect("the git plugin starts a git project for every workspace")
     }
 
     fn new(workspace: &WorkspaceContext, cx: &mut Context<Self>) -> Self {
@@ -85,6 +82,21 @@ impl GitProject {
         git
     }
 
+    fn observe_settings(cx: &mut Context<Self>) -> Vec<Subscription> {
+        vec![
+            INCLUDE_UNTRACKED.observe(cx, |git, _, cx| git.refresh(cx)),
+            SHOW_HISTORY.observe(cx, |git, _, cx| git.refresh(cx)),
+            HISTORY_LIMIT.observe(cx, |git, _, cx| {
+                git.history_limit = history_page_size(cx);
+                git.refresh(cx);
+            }),
+            GUTTER_ENABLED.observe(cx, |git, _, cx| git.repaint_gutter(cx)),
+            GUTTER_BASE.observe(cx, |git, _, cx| git.repaint_gutter(cx)),
+            EXPLORER_DECORATIONS.observe(cx, |git, _, cx| git.publish_decorations(cx)),
+            EXPLORER_FOLDER_DOTS.observe(cx, |git, _, cx| git.publish_decorations(cx)),
+        ]
+    }
+
     pub(crate) fn root(&self, cx: &App) -> PathBuf {
         self.project.read(cx).root().to_path_buf()
     }
@@ -102,15 +114,14 @@ impl GitProject {
             ProjectEvent::Activated if self.state.is_some() => {}
             ProjectEvent::Activated => self.refresh(cx),
             ProjectEvent::FilesTouched => self.schedule_refresh(cx),
+            ProjectEvent::RevealRequested(_) | ProjectEvent::WatchFailed(_) => {}
         }
     }
 
     fn editor_event(&mut self, event: &EditorAreaEvent, cx: &mut Context<Self>) {
         match event {
-            EditorAreaEvent::OpenFilesChanged => self.schedule_gutter(GutterScope::Opened, cx),
-            EditorAreaEvent::FileEdited(path) => {
-                self.schedule_gutter(GutterScope::File(path.clone()), cx)
-            }
+            EditorAreaEvent::OpenFilesChanged => self.schedule_gutter(cx),
+            EditorAreaEvent::FileEdited(path) => self.refresh_gutter_for(path.clone(), cx),
             EditorAreaEvent::Saved => self.schedule_refresh(cx),
             _ => {}
         }
@@ -118,6 +129,6 @@ impl GitProject {
 
     fn theme_changed(&mut self, cx: &mut Context<Self>) {
         self.publish_decorations(cx);
-        self.schedule_gutter(GutterScope::Repaint, cx);
+        self.repaint_gutter(cx);
     }
 }

@@ -1,18 +1,48 @@
 use std::path::PathBuf;
 
-use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::input::Textarea;
 use gpui_kit::component::notification::Notification;
+use gpui_kit::component::{Disableable as _, Icon, Sizable as _, WindowExt as _, v_flex};
 use gpui_kit::*;
 
 use super::SourceControl;
-use super::changes::ChangeGroup;
-use super::keymap::Commit;
+use super::changes::{ChangeGroup, paths_of};
+use super::keymap::{COMMIT_MESSAGE_CONTEXT, Commit};
 use crate::plugins::git::repo as git;
 use crate::plugins::git::settings::{NOTHING_STAGED, NothingStaged};
 
 impl SourceControl {
-    pub(super) fn commit(&mut self, _: &Commit, window: &mut Window, cx: &mut Context<Self>) {
-        if self.committing {
+    pub(super) fn render_commit_box(&self, cx: &Context<Self>) -> Div {
+        let busy = self.is_busy();
+        v_flex()
+            .flex_shrink_0()
+            .px_2()
+            .pb_2()
+            .gap_2()
+            .child(
+                div()
+                    .key_context(COMMIT_MESSAGE_CONTEXT)
+                    .on_action(cx.listener(Self::commit))
+                    .child(Textarea::new(&self.commit_message).small()),
+            )
+            .child(
+                Button::new("commit")
+                    .primary()
+                    .small()
+                    .w_full()
+                    .icon(Icon::empty().path("icons/check.svg"))
+                    .label("Commit")
+                    .loading(busy)
+                    .disabled(busy)
+                    .on_click(cx.listener(|source_control, _, window, cx| {
+                        source_control.commit(&Commit, window, cx)
+                    })),
+            )
+    }
+
+    fn commit(&mut self, _: &Commit, window: &mut Window, cx: &mut Context<Self>) {
+        if self.is_busy() {
             return;
         }
         let message = self.commit_message.read(cx).value().trim().to_string();
@@ -33,7 +63,7 @@ impl SourceControl {
         match NOTHING_STAGED.get(cx) {
             NothingStaged::Ask => self.offer_to_commit_everything(message, window, cx),
             NothingStaged::StageAll => {
-                let paths = self.changes.paths(ChangeGroup::Unstaged);
+                let paths = paths_of(self.changes.files(ChangeGroup::Unstaged));
                 self.start_commit(message, paths, window, cx);
             }
             NothingStaged::DoNothing => window.push_notification(
@@ -60,13 +90,12 @@ impl SourceControl {
             if !matches!(answer.await, Ok(0)) {
                 return;
             }
-            let update = source_control.update_in(cx, |source_control, window, cx| {
-                let paths = source_control.changes.paths(ChangeGroup::Unstaged);
-                source_control.start_commit(message, paths, window, cx)
-            });
-            if let Err(error) = update {
-                log::debug!("source control closed before committing: {error:#}");
-            }
+            source_control
+                .update_in(cx, |source_control, window, cx| {
+                    let paths = paths_of(source_control.changes.files(ChangeGroup::Unstaged));
+                    source_control.start_commit(message, paths, window, cx)
+                })
+                .ok();
         })
         .detach();
     }
@@ -78,30 +107,16 @@ impl SourceControl {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.committing = true;
-        cx.notify();
         self.run_git_operation(
             "commit",
             move |root| git::commit(root, &message, &paths_to_stage),
+            |source_control, window, cx| {
+                source_control
+                    .commit_message
+                    .update(cx, |input, cx| input.set_value("", window, cx))
+            },
             window,
             cx,
         );
-        let operation = self.git_operation.clone();
-        cx.spawn_in(window, async move |source_control, cx| {
-            let committed = operation.await;
-            let update = source_control.update_in(cx, |source_control, window, cx| {
-                source_control.committing = false;
-                if committed {
-                    source_control
-                        .commit_message
-                        .update(cx, |input, cx| input.set_value("", window, cx));
-                }
-                cx.notify();
-            });
-            if let Err(error) = update {
-                log::debug!("source control closed while committing: {error:#}");
-            }
-        })
-        .detach();
     }
 }

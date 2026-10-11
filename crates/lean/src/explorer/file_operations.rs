@@ -1,21 +1,27 @@
-mod copy_path;
 mod create;
 mod delete;
 mod edit_confirmation;
 mod edit_field;
 mod inline_edit;
 mod name_validation;
-mod permanent_delete;
 mod rename;
-mod reveal;
 
-use std::path::PathBuf;
+use std::fmt::Display;
+use std::path::{Path, PathBuf};
 
-use gpui_kit::{Context, Div, InteractiveElement as _, Stateful, actions};
+use gpui_kit::component::WindowExt as _;
+use gpui_kit::{
+    App, AppContext as _, ClipboardItem, Context, Div, InteractiveElement as _, PromptLevel,
+    Stateful, Window, actions,
+};
 
 use super::Explorer;
+use crate::files::file_name;
+use crate::project::ProjectEvent;
 
 pub(super) use inline_edit::InlineEdit;
+
+const CONFIRM_ANSWER: usize = 0;
 
 actions!(
     explorer,
@@ -46,6 +52,35 @@ pub(super) fn bind_file_operations(
 }
 
 impl Explorer {
+    fn copy_path(&mut self, _: &CopyPath, _: &mut Window, cx: &mut Context<Self>) {
+        let path = self.target_path();
+        cx.write_to_clipboard(ClipboardItem::new_string(
+            path.to_string_lossy().into_owned(),
+        ));
+    }
+
+    fn copy_relative_path(&mut self, _: &CopyRelativePath, _: &mut Window, cx: &mut Context<Self>) {
+        let path = self.target_path();
+        let Ok(relative) = path.strip_prefix(&self.root) else {
+            return;
+        };
+        if relative.as_os_str().is_empty() {
+            return;
+        }
+        cx.write_to_clipboard(ClipboardItem::new_string(
+            relative.to_string_lossy().into_owned(),
+        ));
+    }
+
+    fn reveal_in_file_manager(
+        &mut self,
+        _: &RevealInFileManager,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.reveal_path(&self.target_path());
+    }
+
     fn target_path(&self) -> PathBuf {
         self.selected_entry()
             .map_or_else(|| self.root.clone(), |entry| entry.path.clone())
@@ -62,14 +97,66 @@ impl Explorer {
         }
     }
 
+    fn run_disk_op<E: Send + 'static>(
+        &mut self,
+        work: impl FnOnce() -> Result<(), E> + Send + 'static,
+        window: &Window,
+        cx: &mut Context<Self>,
+        then: impl FnOnce(&mut Self, Result<(), E>, &mut Window, &mut Context<Self>) + 'static,
+    ) {
+        let task = cx.background_spawn(async move { work() });
+        cx.spawn_in(window, async move |explorer, cx| {
+            let result = task.await;
+            explorer
+                .update_in(cx, |explorer, window, cx| {
+                    then(explorer, result, window, cx)
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    fn confirm(
+        &mut self,
+        message: &str,
+        detail: &str,
+        button: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl FnOnce(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) {
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            message,
+            Some(detail),
+            &[button, "Cancel"],
+            cx,
+        );
+        cx.spawn_in(window, async move |explorer, cx| {
+            if !matches!(answer.await, Ok(CONFIRM_ANSWER)) {
+                return;
+            }
+            explorer
+                .update_in(cx, |explorer, window, cx| then(explorer, window, cx))
+                .ok();
+        })
+        .detach();
+    }
+
     fn finish_file_operation(
         &mut self,
         folder: PathBuf,
         reveal: Option<PathBuf>,
+        window: &Window,
         cx: &mut Context<Self>,
     ) {
-        self.load_directory_and_reveal(folder, reveal, cx);
+        self.load_directory_and_reveal(folder, reveal, window, cx);
         self.project
-            .update(cx, |project, cx| project.files_touched(cx));
+            .update(cx, |_, cx| cx.emit(ProjectEvent::FilesTouched));
     }
+}
+
+fn report_failure(verb: &str, path: &Path, error: impl Display, window: &mut Window, cx: &mut App) {
+    log::warn!("failed to {verb} {}: {error}", path.display());
+    window.push_notification(format!("Can't {verb} \"{}\": {error}", file_name(path)), cx);
 }

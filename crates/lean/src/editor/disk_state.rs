@@ -19,7 +19,6 @@ pub(super) struct DiskState {
     pub(super) conflict: bool,
     pub(super) saving: Option<SaveInFlight>,
     pub(super) changed_while_saving: bool,
-    pub(super) kept_on_exit: bool,
     pub(super) _check: Task<()>,
     pub(super) _auto_save: Task<()>,
 }
@@ -41,14 +40,9 @@ impl DiskState {
             conflict: false,
             saving: None,
             changed_while_saving: false,
-            kept_on_exit: false,
             _check: Task::ready(()),
             _auto_save: Task::ready(()),
         }
-    }
-
-    pub(super) fn is_saving(&self) -> bool {
-        self.saving.is_some()
     }
 
     pub(super) fn reloaded(&mut self, hash: u64, stamp: DiskStamp) {
@@ -63,6 +57,5 @@ impl DiskState {
         self.stamp = Some(stamp);
         self.written = Some(stamp);
         self.conflict = false;
-        self.saving = None;
     }
 }

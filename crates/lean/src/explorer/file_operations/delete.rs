@@ -1,14 +1,13 @@
+use std::io;
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{AppContext as _, Context, PromptLevel, SharedString, Window};
+use gpui_kit::{Context, Window};
 
-use super::DeleteSelected;
+use super::{DeleteSelected, report_failure};
 use crate::explorer::Explorer;
 use crate::explorer::settings::{CONFIRM_DELETE, DELETE_TO, DeleteTo};
 use crate::files::file_name;
 use crate::plugins::PanelEvent;
-
-const MOVE_TO_TRASH_ANSWER: usize = 0;
 
 #[cfg(windows)]
 const TRASH_NAME: &str = "Recycle Bin";
@@ -30,80 +29,80 @@ impl Explorer {
         let name = file_name(&path);
         let permanently = DELETE_TO.get(cx) == DeleteTo::Permanent;
         match (CONFIRM_DELETE.get(cx), permanently) {
-            (false, false) => self.move_to_trash(path, name, window, cx),
-            (false, true) => self.delete_permanently(path, name, window, cx),
-            (true, false) => self.confirm_move_to_trash(path, name, is_dir, window, cx),
+            (false, false) => self.move_to_trash(path, window, cx),
+            (false, true) => self.delete_permanently(path, window, cx),
+            (true, false) => {
+                let (message, detail) = delete_question(&name, is_dir);
+                let button = format!("Move to {TRASH_NAME}");
+                self.confirm(
+                    &message,
+                    &detail,
+                    &button,
+                    window,
+                    cx,
+                    move |explorer, window, cx| explorer.move_to_trash(path, window, cx),
+                );
+            }
             (true, true) => {
-                let question = permanent_delete_question(&name, is_dir);
-                let detail = "This can't be undone.".to_string();
-                self.confirm_permanent_delete(path, name, question, detail, window, cx);
+                let message = permanent_delete_question(&name, is_dir);
+                self.confirm_permanent_delete(path, &message, "This can't be undone.", window, cx);
             }
         }
     }
 
-    fn confirm_move_to_trash(
+    fn confirm_permanent_delete(
         &mut self,
         path: PathBuf,
-        name: SharedString,
-        is_dir: bool,
+        message: &str,
+        detail: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (message, detail) = delete_question(&name, is_dir);
-        let move_to_trash = format!("Move to {TRASH_NAME}");
-        let answer = window.prompt(
-            PromptLevel::Warning,
-            &message,
-            Some(&detail),
-            &[move_to_trash.as_str(), "Cancel"],
+        self.confirm(
+            message,
+            detail,
+            "Delete Permanently",
+            window,
             cx,
+            move |explorer, window, cx| explorer.delete_permanently(path, window, cx),
         );
-        cx.spawn_in(window, async move |explorer, cx| {
-            if !matches!(answer.await, Ok(MOVE_TO_TRASH_ANSWER)) {
-                return;
-            }
-            let update = explorer.update_in(cx, |explorer, window, cx| {
-                explorer.move_to_trash(path, name, window, cx)
-            });
-            if let Err(error) = update {
-                log::debug!("explorer dropped before deleting an entry: {error:#}");
-            }
-        })
-        .detach();
     }
 
-    fn move_to_trash(
-        &mut self,
-        path: PathBuf,
-        name: SharedString,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let task = cx.background_spawn({
-            let path = path.clone();
-            async move { trash::delete(&path) }
-        });
-        cx.spawn_in(window, async move |explorer, cx| {
-            let result = task.await;
-            let update = explorer.update_in(cx, |explorer, window, cx| match result {
-                Ok(()) => explorer.finish_delete(path, cx),
+    fn move_to_trash(&mut self, path: PathBuf, window: &Window, cx: &mut Context<Self>) {
+        let target = path.clone();
+        self.run_disk_op(
+            move || trash::delete(&target),
+            window,
+            cx,
+            move |explorer, result, window, cx| match result {
+                Ok(()) => explorer.finish_delete(path, window, cx),
                 Err(error) => {
                     log::warn!("failed to move {} to the trash: {error}", path.display());
+                    let name = file_name(&path);
                     let reason = format!("Can't move \"{name}\" to the {TRASH_NAME}: {error}");
                     let question = format!(
                         "Do you want to permanently delete \"{name}\"? This can't be undone."
                     );
-                    explorer.confirm_permanent_delete(path, name, reason, question, window, cx);
+                    explorer.confirm_permanent_delete(path, &reason, &question, window, cx);
                 }
-            });
-            if let Err(error) = update {
-                log::debug!("explorer dropped while deleting an entry: {error:#}");
-            }
-        })
-        .detach();
+            },
+        );
     }
 
-    pub(super) fn finish_delete(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    fn delete_permanently(&mut self, path: PathBuf, window: &Window, cx: &mut Context<Self>) {
+        let target = path.clone();
+        self.run_disk_op(
+            move || remove_from_disk(&target),
+            window,
+            cx,
+            move |explorer, result, window, cx| match result {
+                Ok(()) => explorer.finish_delete(path, window, cx),
+                Err(error) => report_failure("delete", &path, error, window, cx),
+            },
+        );
+    }
+
+    fn finish_delete(&mut self, path: PathBuf, window: &Window, cx: &mut Context<Self>) {
         let index = self
             .visible
             .iter()
@@ -124,7 +123,7 @@ impl Explorer {
             self.selected = self.visible.get(next).map(|entry| entry.path.clone());
         }
         if let Some(folder) = path.parent().map(Path::to_path_buf) {
-            self.finish_file_operation(folder, None, cx);
+            self.finish_file_operation(folder, None, window, cx);
         }
         cx.emit(PanelEvent::PathDeleted(path));
         cx.notify();
@@ -150,5 +149,13 @@ fn permanent_delete_question(name: &str, is_dir: bool) -> String {
         format!("Are you sure you want to permanently delete \"{name}\" and its contents?")
     } else {
         format!("Are you sure you want to permanently delete \"{name}\"?")
+    }
+}
+
+fn remove_from_disk(path: &Path) -> io::Result<()> {
+    if path.symlink_metadata()?.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
     }
 }

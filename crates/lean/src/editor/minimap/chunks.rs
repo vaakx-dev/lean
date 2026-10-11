@@ -1,12 +1,12 @@
-mod build;
-
 use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
-use super::rows::Rows;
+use gpui_kit::Hsla;
+use gpui_kit::component::input::EditorState;
 
-pub(super) use build::{BuiltChunks, ChunkJob};
+use super::rows::{Rows, RowsJob};
+use super::style::MinimapStyle;
 
 const CHUNK_LINES: usize = 1024;
 const MAX_CHUNKS: usize = 16;
@@ -14,6 +14,41 @@ const MAX_CHUNKS: usize = 16;
 struct Chunk {
     version: u64,
     rows: Rc<Rows>,
+}
+
+pub(super) struct ChunkJob {
+    version: u64,
+    indices: Vec<usize>,
+    rows: RowsJob,
+}
+
+pub(super) struct BuiltChunks {
+    version: u64,
+    chunks: Vec<(usize, Rows)>,
+}
+
+impl ChunkJob {
+    pub(super) fn new(
+        editor: &EditorState,
+        indices: Vec<usize>,
+        version: u64,
+        foreground: Hsla,
+        style: &MinimapStyle,
+    ) -> Self {
+        let ranges = indices.iter().map(|&index| chunk_lines(index)).collect();
+        Self {
+            version,
+            indices,
+            rows: RowsJob::new(editor, ranges, foreground, style),
+        }
+    }
+
+    pub(super) fn run(self) -> BuiltChunks {
+        BuiltChunks {
+            version: self.version,
+            chunks: self.indices.into_iter().zip(self.rows.run()).collect(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -33,13 +68,13 @@ impl Chunks {
         chunk_indices(lines).any(|index| !self.chunks.contains_key(&index))
     }
 
-    pub(super) fn needs_build(&self, lines: &Range<usize>, version: u64) -> bool {
-        chunk_indices(lines).any(|index| self.is_outdated(index, version))
-    }
-
     pub(super) fn outdated(&self, lines: &Range<usize>, version: u64) -> Vec<usize> {
         chunk_indices(lines)
-            .filter(|&index| self.is_outdated(index, version))
+            .filter(|index| {
+                self.chunks
+                    .get(index)
+                    .is_none_or(|chunk| chunk.version != version)
+            })
             .collect()
     }
 
@@ -63,12 +98,6 @@ impl Chunks {
     pub(super) fn drop_past(&mut self, line_count: usize) {
         let chunk_count = line_count.div_ceil(CHUNK_LINES);
         self.chunks.retain(|&index, _| index < chunk_count);
-    }
-
-    fn is_outdated(&self, index: usize, version: u64) -> bool {
-        self.chunks
-            .get(&index)
-            .is_none_or(|chunk| chunk.version != version)
     }
 
     fn evict_far_from(&mut self, visible: &Range<usize>) {

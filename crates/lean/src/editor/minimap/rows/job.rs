@@ -8,7 +8,6 @@ use gpui_kit::*;
 
 use super::super::geometry::MAX_COLUMNS;
 use super::super::style::MinimapStyle;
-use super::style_cursor::StyleCursor;
 use super::{Rows, RowsBuilder};
 
 const MAX_LINE_BYTES: usize = 10_000;
@@ -119,5 +118,35 @@ impl RowsJob {
             offset += character.len_utf8();
         }
         rows.end_row();
+    }
+}
+
+struct StyleCursor<'a> {
+    styles: &'a [(Range<usize>, HighlightStyle)],
+    index: usize,
+    foreground: Hsla,
+}
+
+impl<'a> StyleCursor<'a> {
+    fn new(styles: &'a [(Range<usize>, HighlightStyle)], foreground: Hsla) -> Self {
+        Self {
+            styles,
+            index: 0,
+            foreground,
+        }
+    }
+
+    fn color_at(&mut self, offset: usize) -> Hsla {
+        while self
+            .styles
+            .get(self.index)
+            .is_some_and(|(range, _)| range.end <= offset)
+        {
+            self.index += 1;
+        }
+        match self.styles.get(self.index) {
+            Some((range, style)) if range.start <= offset => style.color.unwrap_or(self.foreground),
+            _ => self.foreground,
+        }
     }
 }

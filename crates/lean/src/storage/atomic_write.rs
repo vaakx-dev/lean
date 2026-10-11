@@ -1,44 +1,56 @@
-use std::fs::{self, File};
-use std::io::Write as _;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::fs::{self, OpenOptions, Permissions};
+use std::io::{self, Write as _};
+use std::path::Path;
 
-use anyhow::{Context as _, Result};
 use serde::Serialize;
 
-static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
-
-pub(crate) fn write_json_atomic<T: Serialize + ?Sized>(file: &Path, value: &T) -> Result<()> {
+pub(crate) fn write_json_atomic<T: Serialize + ?Sized>(file: &Path, value: &T) -> io::Result<()> {
     let mut contents = serde_json::to_vec_pretty(value)?;
     contents.push(b'\n');
+    if let Some(parent) = file.parent() {
+        fs::create_dir_all(parent)?;
+    }
     write_atomic(file, &contents)
 }
 
-fn write_atomic(file: &Path, contents: &[u8]) -> Result<()> {
-    let parent = file
+pub(crate) fn write_atomic(file: &Path, bytes: &[u8]) -> io::Result<()> {
+    let folder = file
         .parent()
-        .with_context(|| format!("{} has no parent folder", file.display()))?;
-    fs::create_dir_all(parent)?;
-    let temp = temp_path(file);
-    let written = write_synced(&temp, contents).and_then(|()| Ok(fs::rename(&temp, file)?));
-    if written.is_err() {
-        fs::remove_file(&temp).ok();
+        .ok_or_else(|| io::Error::other("the file has no parent folder"))?;
+    let temporary = folder.join(temporary_name(file));
+    let permissions = fs::metadata(file)
+        .ok()
+        .map(|metadata| metadata.permissions());
+    let written =
+        write_temporary(&temporary, bytes, permissions).and_then(|()| fs::rename(&temporary, file));
+    if written.is_err()
+        && let Err(error) = fs::remove_file(&temporary)
+    {
+        log::debug!("failed to remove {}: {error}", temporary.display());
     }
     written
 }
 
-fn write_synced(path: &Path, contents: &[u8]) -> Result<()> {
-    let mut temp = File::create(path)?;
-    temp.write_all(contents)?;
-    temp.sync_all()?;
-    Ok(())
+fn write_temporary(
+    temporary: &Path,
+    bytes: &[u8],
+    permissions: Option<Permissions>,
+) -> io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temporary)?;
+    file.write_all(bytes)?;
+    if let Some(permissions) = permissions {
+        file.set_permissions(permissions)?;
+    }
+    file.sync_all()
 }
 
-fn temp_path(file: &Path) -> PathBuf {
+fn temporary_name(file: &Path) -> String {
     let name = file
         .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
+        .map(|name| name.to_string_lossy())
         .unwrap_or_default();
-    let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-    file.with_file_name(format!(".{name}.{}.{id}.tmp", std::process::id()))
+    format!(".{name}.{}.lean-save", uuid::Uuid::new_v4().simple())
 }

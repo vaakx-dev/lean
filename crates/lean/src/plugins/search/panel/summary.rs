@@ -1,11 +1,11 @@
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::SearchPanel;
 use super::running::SearchStatus;
+use crate::ui::icon_button;
 
 impl SearchPanel {
     pub(super) fn render_summary(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -60,16 +60,16 @@ impl SearchPanel {
                     .child(div().flex_1().min_w_0().truncate().child(message))
                     .when(has_results, |row| {
                         row.child(
-                            action_button("toggle-all", collapse_icon, collapse_tooltip)
+                            icon_button("toggle-all", collapse_icon, collapse_tooltip)
                                 .on_click(cx.listener(|panel, _, _, cx| panel.toggle_all(cx))),
                         )
                     })
                     .child(
-                        action_button("refresh", "icons/refresh-cw.svg", "Refresh")
+                        icon_button("refresh", "icons/refresh-cw.svg", "Refresh")
                             .on_click(cx.listener(|panel, _, _, cx| panel.search_now(cx))),
                     )
                     .child(
-                        action_button("clear", "icons/x.svg", "Clear Search Results").on_click(
+                        icon_button("clear", "icons/x.svg", "Clear Search Results").on_click(
                             cx.listener(|panel, _, window, cx| panel.clear_query(window, cx)),
                         ),
                     ),
@@ -101,12 +101,4 @@ impl SearchPanel {
 
 fn plural(count: usize, one: &'static str, many: &'static str) -> &'static str {
     if count == 1 { one } else { many }
-}
-
-fn action_button(id: &'static str, icon: &'static str, tooltip: &'static str) -> Button {
-    Button::new(id)
-        .ghost()
-        .xsmall()
-        .icon(Icon::empty().path(icon))
-        .tooltip(tooltip)
 }

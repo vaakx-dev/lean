@@ -1,13 +1,9 @@
 use gpui_kit::component::color_picker::{ColorPickerEvent, ColorPickerState, ColorSelect};
 use gpui_kit::component::{Colorize as _, Sizable as _};
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::field::Field;
-use super::is_stacked;
 use crate::settings::Setting;
-
-const COLOR_WIDTH: Pixels = px(160.);
 
 struct ColorField {
     picker: Entity<ColorPickerState>,
@@ -25,15 +21,10 @@ pub(crate) fn color(
         let picker = color_picker(&control_setting, window, cx);
         ColorSelect::new(&picker)
             .with_size(options.size())
-            .map(|select| {
-                if is_stacked(options) {
-                    select.w_full()
-                } else {
-                    select.w(COLOR_WIDTH)
-                }
-            })
+            .w_full()
             .into_any_element()
     })
+    .control_width(px(160.))
 }
 
 fn color_picker(

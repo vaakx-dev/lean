@@ -7,7 +7,7 @@ use gpui_kit::*;
 
 use super::Workspace;
 use crate::terminal::settings::{CONFIRM_CLOSE_RUNNING, PANEL_HEIGHT};
-use crate::terminal::{StartDirectory, TerminalPanel, TerminalPanelEvent};
+use crate::terminal::{TerminalLaunch, TerminalPanel, TerminalPanelEvent, shell_kind};
 use resize::{TerminalResize, panel_height, terminal_resize_handle};
 
 pub(super) struct TerminalDock {
@@ -44,14 +44,6 @@ impl Workspace {
         if self.terminal_visible {
             self.terminal_panel(window, cx);
         }
-    }
-
-    pub(super) fn sync_terminal_launch(&mut self, cx: &mut Context<Self>) {
-        let Some(dock) = &self.terminal else {
-            return;
-        };
-        let launch = self.terminal_launch(cx);
-        dock.panel.update(cx, |panel, _| panel.set_launch(launch));
     }
 
     pub(super) fn running_terminal_count(&self, cx: &App) -> usize {
@@ -123,14 +115,19 @@ impl Workspace {
         if let Some(dock) = &self.terminal {
             return dock.panel.clone();
         }
-        let root = self.context.project.read(cx).root().to_path_buf();
         let editor_area = self.context.editor_area.downgrade();
-        let start_directory = StartDirectory::new(root, move |cx| {
-            let area = editor_area.upgrade()?;
-            area.read(cx).active_path().map(Path::to_path_buf)
-        });
-        let launch = self.terminal_launch(cx);
-        let panel = cx.new(|cx| TerminalPanel::new(start_directory, launch, cx));
+        let toolchains = self.context.toolchains.downgrade();
+        let launch = move |cx: &App| TerminalLaunch {
+            active_file: editor_area
+                .upgrade()
+                .and_then(|area| area.read(cx).active_path().map(Path::to_path_buf)),
+            ..toolchains
+                .upgrade()
+                .map(|toolchains| toolchains.read(cx).terminal_launch(shell_kind(cx), cx))
+                .unwrap_or_default()
+        };
+        let root = self.project_root(cx);
+        let panel = cx.new(|cx| TerminalPanel::new(root, launch, cx));
         let events = cx.subscribe_in(
             &panel,
             window,

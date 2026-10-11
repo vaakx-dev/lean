@@ -163,13 +163,9 @@ impl Notebook {
         cx.spawn(async move |notebook, cx| {
             while let Some(event) = events.next().await {
                 let stopped = matches!(event, KernelEvent::Stopped(_));
-                if let Err(error) =
-                    notebook.update(cx, |notebook, cx| notebook.handle_kernel_event(event, cx))
-                {
-                    log::debug!("notebook dropped while its kernel was running: {error:#}");
-                    break;
-                }
-                if stopped {
+                let update =
+                    notebook.update(cx, |notebook, cx| notebook.handle_kernel_event(event, cx));
+                if update.is_err() || stopped {
                     break;
                 }
             }

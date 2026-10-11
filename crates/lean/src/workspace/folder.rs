@@ -47,7 +47,10 @@ impl ProjectViews {
                 &project,
                 window,
                 |workspace, _, event: &FilesChanged, window, cx| {
-                    workspace.sync_open_files(&event.0, window, cx)
+                    workspace
+                        .context
+                        .editor_area
+                        .update(cx, |area, cx| area.apply_fs_changes(&event.0, window, cx))
                 },
             ),
             cx.subscribe_in(
@@ -59,13 +62,17 @@ impl ProjectViews {
             ),
             cx.subscribe(
                 &editor_area,
-                |workspace, _, event: &EditorAreaEvent, cx| match event {
+                |workspace, area, event: &EditorAreaEvent, cx| match event {
                     EditorAreaEvent::ActiveEditorChanged => {
                         workspace.record_session(cx);
                         cx.notify();
                     }
                     EditorAreaEvent::OpenFilesChanged => {
-                        workspace.watch_open_files(cx);
+                        let paths = area.read(cx).open_paths();
+                        workspace
+                            .context
+                            .project
+                            .update(cx, |project, _| project.watch_open_files(paths));
                         workspace.record_session(cx);
                     }
                     _ => {}
@@ -118,6 +125,8 @@ impl Workspace {
         self.context
             .project
             .update(cx, |project, cx| project.refresh_after_activation(cx));
-        self.refresh_toolchains_after_activation(cx);
+        self.context
+            .toolchains
+            .update(cx, |toolchains, cx| toolchains.refresh_if_automatic(cx));
     }
 }

@@ -1,11 +1,11 @@
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::button::Button;
-use gpui_kit::component::{ActiveTheme as _, Theme};
 use gpui_kit::*;
 
 use super::SourceControl;
 use super::changes::ChangeGroup;
-use super::row_actions::{hover_actions, icon_button};
-use super::rows::{Section, chevron, clickable_row};
+use super::rows::{Section, clickable_row, hover_actions};
+use crate::ui::{chevron, count_badge, icon_button};
 
 impl SourceControl {
     pub(super) fn render_section_row(
@@ -69,18 +69,4 @@ impl SourceControl {
             Section::Commits => Vec::new(),
         }
     }
-}
-
-fn count_badge(count: usize, theme: &Theme) -> Div {
-    div()
-        .flex_shrink_0()
-        .min_w(px(18.))
-        .px_1p5()
-        .flex()
-        .justify_center()
-        .rounded_full()
-        .bg(theme.accent)
-        .text_xs()
-        .text_color(theme.muted_foreground)
-        .child(count.to_string())
 }

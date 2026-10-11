@@ -1,5 +1,5 @@
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, h_flex};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -7,6 +7,7 @@ use super::CELL_GROUP;
 use crate::plugins::notebook::Notebook;
 use crate::plugins::notebook::cell::Cell;
 use crate::plugins::notebook::document::CellKind;
+use crate::ui::icon_button;
 
 pub(super) fn render_actions(cell: &Cell, selected: bool, cx: &Context<Notebook>) -> Div {
     let theme = cx.theme();
@@ -35,22 +36,22 @@ pub(super) fn render_actions(cell: &Cell, selected: bool, cx: &Context<Notebook>
         })
         .map(|actions| match cell.kind {
             CellKind::Code => actions.child(
-                action_button("run-cell", "icons/play.svg", "Run Cell").on_click(
+                icon_button("run-cell", "icons/play.svg", "Run Cell").on_click(
                     cx.listener(move |notebook, _, _, cx| notebook.run_cells(vec![id], cx)),
                 ),
             ),
             CellKind::Markdown | CellKind::Raw => actions.child(
-                action_button("edit-cell", "icons/pencil.svg", "Edit Cell").on_click(
+                icon_button("edit-cell", "icons/pencil.svg", "Edit Cell").on_click(
                     cx.listener(move |notebook, _, window, cx| notebook.edit(id, window, cx)),
                 ),
             ),
         })
         .child(
-            action_button("move-up", "icons/arrow-up.svg", "Move Cell Up")
+            icon_button("move-up", "icons/arrow-up.svg", "Move Cell Up")
                 .on_click(cx.listener(move |notebook, _, _, cx| notebook.move_cell(id, -1, cx))),
         )
         .child(
-            action_button("move-down", "icons/arrow-down.svg", "Move Cell Down")
+            icon_button("move-down", "icons/arrow-down.svg", "Move Cell Down")
                 .on_click(cx.listener(move |notebook, _, _, cx| notebook.move_cell(id, 1, cx))),
         )
         .child(
@@ -72,22 +73,14 @@ pub(super) fn render_actions(cell: &Cell, selected: bool, cx: &Context<Notebook>
         )
         .when(cell.kind == CellKind::Code, |actions| {
             actions.child(
-                action_button("clear-output", "icons/eraser.svg", "Clear Output").on_click(
+                icon_button("clear-output", "icons/eraser.svg", "Clear Output").on_click(
                     cx.listener(move |notebook, _, _, cx| notebook.clear_cell_outputs(id, cx)),
                 ),
             )
         })
         .child(
-            action_button("delete-cell", "icons/trash.svg", "Delete Cell").on_click(
+            icon_button("delete-cell", "icons/trash.svg", "Delete Cell").on_click(
                 cx.listener(move |notebook, _, window, cx| notebook.delete_cell(id, window, cx)),
             ),
         )
-}
-
-fn action_button(id: &'static str, icon: &'static str, tooltip: &'static str) -> Button {
-    Button::new(id)
-        .ghost()
-        .xsmall()
-        .icon(Icon::empty().path(icon))
-        .tooltip(tooltip)
 }

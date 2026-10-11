@@ -3,7 +3,7 @@ use gpui_kit::App;
 use super::config::SearchConfig;
 use super::settings::{MATCH_CASE, REGEX, WHOLE_WORD};
 
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Default)]
 pub(super) struct SearchOptions {
     pub(super) match_case: bool,
     pub(super) whole_word: bool,

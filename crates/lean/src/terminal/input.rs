@@ -1,6 +1,5 @@
 mod keymap;
 mod keys;
-mod passthrough;
 
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::TermMode;

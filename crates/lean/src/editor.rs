@@ -5,7 +5,7 @@ mod disk_state;
 mod disk_sync;
 mod file_actions;
 pub(crate) mod file_text;
-mod go_to;
+mod line_prompt;
 mod minimap;
 mod open_file;
 mod opening;
@@ -28,6 +28,7 @@ use crate::plugins::AnyFileView;
 use crate::toolchain::Toolchains;
 use open_file::OpenFile;
 use preview_tabs::LastOpen;
+use saving::HotExit;
 use watermark::render_watermark;
 
 pub(crate) use text_file::TEXT_VIEWER;
@@ -46,6 +47,7 @@ pub(crate) struct EditorArea {
     toolchains: Entity<Toolchains>,
     focus_handle: FocusHandle,
     last_open: Option<LastOpen>,
+    hot_exit: HotExit,
     _preview_tabs: Subscription,
 }
 
@@ -59,6 +61,7 @@ impl EditorArea {
             toolchains,
             focus_handle: cx.focus_handle(),
             last_open: None,
+            hot_exit: HotExit::default(),
             _preview_tabs: Self::observe_preview_tabs(cx),
         }
     }
@@ -76,10 +79,10 @@ impl EditorArea {
             .map(|file| (file.path.as_path(), &file.view))
     }
 
-    pub(crate) fn unsaved_file_names(&self) -> Vec<SharedString> {
+    pub(crate) fn unsaved_file_names(&self, cx: &App) -> Vec<SharedString> {
         self.files
             .iter()
-            .filter(|file| file.dirty && !file.disk.kept_on_exit)
+            .filter(|file| file.dirty && !file.kept_on_exit(cx))
             .map(|file| file.name.clone())
             .collect()
     }

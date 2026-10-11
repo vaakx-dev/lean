@@ -6,9 +6,10 @@ use gpui_kit::*;
 
 use super::file_operations::InlineEdit;
 use super::settings::{FileIcons, OpenOn};
-use super::{Explorer, VisibleEntry, chevron_icon};
+use super::{Explorer, VisibleEntry};
 use crate::files::file_icon;
 use crate::plugins::{FileDecoration, PanelEvent};
+use crate::ui::chevron_path;
 
 impl Explorer {
     pub(super) fn render_rows(
@@ -106,7 +107,7 @@ impl Explorer {
         if entry.is_dir {
             let is_expanded = !entry.is_draft && self.expanded.contains(&entry.path);
             return Icon::empty()
-                .path(chevron_icon(is_expanded))
+                .path(chevron_path(is_expanded))
                 .size_4()
                 .text_color(cx.theme().muted_foreground)
                 .into_any_element();
@@ -147,7 +148,7 @@ impl Explorer {
         window.focus(&self.focus_handle, cx);
         self.selected = Some(path.clone());
         if is_dir {
-            self.toggle_folder(path, cx);
+            self.toggle_folder(path, window, cx);
         } else if click_count > 1 || self.options.open_on == OpenOn::SingleClick {
             cx.emit(PanelEvent::OpenFile(path));
             cx.notify();

@@ -2,18 +2,14 @@ use std::path::PathBuf;
 
 use futures::channel::oneshot;
 use gpui_kit::component::button::Button;
-use gpui_kit::component::input::Input;
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::{Disableable as _, Icon, Sizable as _, h_flex};
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use super::draft::DraftInput;
 use super::field::Field;
-use super::is_stacked;
-use super::text::text_input;
-use super::text_value::TextValue;
+use super::text_value::{TextValue, trimmed};
 use crate::settings::Setting;
-
-const PATH_WIDTH: Pixels = px(300.);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PathKind {
@@ -35,13 +31,7 @@ pub(crate) fn path<T: TextValue>(
         let setting = control_setting.clone();
         h_flex()
             .gap_1()
-            .map(|row| {
-                if is_stacked(options) {
-                    row.w_full()
-                } else {
-                    row.w(PATH_WIDTH)
-                }
-            })
+            .w_full()
             .child(
                 div().flex_1().min_w_0().child(
                     Input::new(&input)
@@ -60,6 +50,27 @@ pub(crate) fn path<T: TextValue>(
             )
             .into_any_element()
     })
+    .control_width(px(300.))
+}
+
+fn text_input<T: TextValue>(
+    setting: &Setting<T>,
+    placeholder: SharedString,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<InputState> {
+    let draft = DraftInput {
+        key: setting.key,
+        value: setting.get(cx).to_text(),
+        normalize: trimmed,
+    };
+    let setting = setting.clone();
+    draft.build(
+        window,
+        cx,
+        move |input| input.placeholder(placeholder),
+        move |text, _, cx| setting.set(T::from_text(text), cx),
+    )
 }
 
 fn browse_icon(kind: PathKind) -> &'static str {

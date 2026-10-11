@@ -2,9 +2,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use gpui_kit::{Context, SharedString};
+use gpui_kit::Context;
 
-use super::{FilesChanged, Project, ProjectEvent, WatchFailed};
+use super::{FilesChanged, Project, ProjectEvent};
 use crate::watcher::{FsChanges, MetadataWatch};
 
 impl Project {
@@ -12,24 +12,12 @@ impl Project {
         self.watcher.watches(folder)
     }
 
-    pub(crate) fn watch_open_files(&mut self, files: HashSet<PathBuf>) {
-        if self.open_files == files {
-            return;
-        }
-        self.open_files = files.clone();
+    pub(crate) fn watch_open_files(&self, files: HashSet<PathBuf>) {
         self.watcher.set_open_files(files);
     }
 
-    pub(crate) fn watch_metadata(&mut self, watch: MetadataWatch) {
-        if self.metadata.watches_same(&watch) {
-            return;
-        }
-        self.metadata = watch.clone();
+    pub(crate) fn watch_metadata(&self, watch: MetadataWatch) {
         self.watcher.set_metadata(watch);
-    }
-
-    pub(crate) fn reconcile_after_watch_start(&mut self, cx: &mut Context<Self>) {
-        cx.emit(FilesChanged(Rc::new(FsChanges::reconcile())));
     }
 
     pub(crate) fn rescan(&mut self) {
@@ -46,10 +34,6 @@ impl Project {
             }
         }
         cx.emit(ProjectEvent::Activated);
-    }
-
-    pub(crate) fn report_watch_failure(&mut self, message: SharedString, cx: &mut Context<Self>) {
-        cx.emit(WatchFailed(message));
     }
 
     fn rescan_now(&mut self, cx: &mut Context<Self>) {

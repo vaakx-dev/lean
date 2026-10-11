@@ -3,7 +3,6 @@ mod context_menu;
 mod file_operations;
 mod keyboard;
 mod loading;
-mod notices;
 mod options;
 mod panel;
 mod revealing;
@@ -19,8 +18,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use gpui_kit::{
-    AnyWindowHandle, App, Context, Entity, EventEmitter, FocusHandle, Focusable, SharedString,
-    Subscription, UniformListScrollHandle, Window,
+    App, Context, Entity, EventEmitter, FocusHandle, Focusable, SharedString, Subscription,
+    UniformListScrollHandle, Window,
 };
 
 use crate::editor::EditorArea;
@@ -47,7 +46,6 @@ pub(crate) struct Explorer {
     project: Entity<Project>,
     editor_area: Entity<EditorArea>,
     decorations: Entity<FileDecorations>,
-    window: AnyWindowHandle,
     root: PathBuf,
     focus_handle: FocusHandle,
     scroll_handle: UniformListScrollHandle,
@@ -75,7 +73,6 @@ impl Explorer {
             project,
             editor_area: workspace.editor_area.clone(),
             decorations: workspace.decorations.clone(),
-            window: window.window_handle(),
             root: root.clone(),
             focus_handle: cx.focus_handle(),
             scroll_handle: UniformListScrollHandle::new(),
@@ -92,8 +89,8 @@ impl Explorer {
             loads: FolderLoads::default(),
             _subscriptions: subscriptions::subscribe(workspace, window, cx),
         };
-        explorer.load_directory(root, cx);
-        explorer.follow_active_editor(cx);
+        explorer.load_directory(root, window, cx);
+        explorer.follow_active_editor(window, cx);
         explorer
     }
 }
@@ -101,13 +98,5 @@ impl Explorer {
 impl Focusable for Explorer {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
-    }
-}
-
-fn chevron_icon(is_expanded: bool) -> &'static str {
-    if is_expanded {
-        "icons/chevron-down.svg"
-    } else {
-        "icons/chevron-right.svg"
     }
 }

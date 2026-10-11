@@ -96,9 +96,9 @@ impl Minimap {
     fn sync_editor_later(&self, cx: &mut Context<Self>) {
         let minimap = cx.entity().downgrade();
         cx.defer(move |cx| {
-            if let Err(error) = minimap.update(cx, |minimap, cx| minimap.sync_editor(cx)) {
-                log::debug!("minimap released before restyling: {error:#}");
-            }
+            minimap
+                .update(cx, |minimap, cx| minimap.sync_editor(cx))
+                .ok();
         });
     }
 

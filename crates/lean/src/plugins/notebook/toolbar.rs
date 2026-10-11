@@ -1,12 +1,13 @@
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, h_flex};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex};
 use gpui_kit::*;
 
 use super::Notebook;
 use super::document::CellKind;
 use super::status::KernelStatus;
 use crate::toolchain::toolchain_picker;
+use crate::ui::icon_button;
 
 const TOOLBAR_HEIGHT: Pixels = px(34.);
 const PYTHON: &str = "python";
@@ -25,60 +26,40 @@ impl Notebook {
             .border_color(theme.border)
             .bg(theme.background)
             .child(
-                toolbar_button("add-code", "icons/plus.svg", "Code", "Insert Code Cell").on_click(
-                    cx.listener(|notebook, _, window, cx| {
+                icon_button("add-code", "icons/plus.svg", "Insert Code Cell")
+                    .label("Code")
+                    .on_click(cx.listener(|notebook, _, window, cx| {
                         notebook.insert_below_selected(CellKind::Code, window, cx)
-                    }),
-                ),
+                    })),
             )
             .child(
-                toolbar_button(
-                    "add-markdown",
-                    "icons/plus.svg",
-                    "Markdown",
-                    "Insert Markdown Cell",
-                )
-                .on_click(cx.listener(|notebook, _, window, cx| {
-                    notebook.insert_below_selected(CellKind::Markdown, window, cx)
-                })),
+                icon_button("add-markdown", "icons/plus.svg", "Insert Markdown Cell")
+                    .label("Markdown")
+                    .on_click(cx.listener(|notebook, _, window, cx| {
+                        notebook.insert_below_selected(CellKind::Markdown, window, cx)
+                    })),
             )
             .child(div().w(px(1.)).h(px(16.)).mx_1().bg(theme.border))
             .child(
-                toolbar_button(
-                    "run-all",
-                    "icons/fast-forward.svg",
-                    "Run All",
-                    "Run All Cells",
-                )
-                .on_click(cx.listener(|notebook, _, _, cx| notebook.run_all(cx))),
+                icon_button("run-all", "icons/fast-forward.svg", "Run All Cells")
+                    .label("Run All")
+                    .on_click(cx.listener(|notebook, _, _, cx| notebook.run_all(cx))),
             )
             .child(
-                toolbar_button(
-                    "restart",
-                    "icons/rotate-ccw.svg",
-                    "Restart",
-                    "Restart Kernel",
-                )
-                .on_click(cx.listener(|notebook, _, _, cx| notebook.restart_kernel(cx))),
+                icon_button("restart", "icons/rotate-ccw.svg", "Restart Kernel")
+                    .label("Restart")
+                    .on_click(cx.listener(|notebook, _, _, cx| notebook.restart_kernel(cx))),
             )
             .child(
-                toolbar_button(
-                    "interrupt",
-                    "icons/square.svg",
-                    "Interrupt",
-                    "Interrupt Kernel",
-                )
-                .disabled(!busy)
-                .on_click(cx.listener(|notebook, _, _, cx| notebook.interrupt_kernel(cx))),
+                icon_button("interrupt", "icons/square.svg", "Interrupt Kernel")
+                    .label("Interrupt")
+                    .disabled(!busy)
+                    .on_click(cx.listener(|notebook, _, _, cx| notebook.interrupt_kernel(cx))),
             )
             .child(
-                toolbar_button(
-                    "clear-all",
-                    "icons/eraser.svg",
-                    "Clear Outputs",
-                    "Clear All Outputs",
-                )
-                .on_click(cx.listener(|notebook, _, _, cx| notebook.clear_all_outputs(cx))),
+                icon_button("clear-all", "icons/eraser.svg", "Clear All Outputs")
+                    .label("Clear Outputs")
+                    .on_click(cx.listener(|notebook, _, _, cx| notebook.clear_all_outputs(cx))),
             )
             .child(div().flex_1())
             .children(self.render_restart_notice(cx))
@@ -92,30 +73,16 @@ impl Notebook {
             .as_ref()
             .is_some_and(|session| session.outdated);
         outdated.then(|| {
-            Button::new("restart-to-apply")
-                .ghost()
-                .xsmall()
-                .icon(Icon::empty().path("icons/triangle-alert.svg"))
-                .label("Restart kernel to apply")
-                .tooltip("The Python environment or interpreter changed since this kernel started")
-                .text_color(cx.theme().warning)
-                .on_click(cx.listener(|notebook, _, _, cx| notebook.restart_kernel(cx)))
+            icon_button(
+                "restart-to-apply",
+                "icons/triangle-alert.svg",
+                "The Python environment or interpreter changed since this kernel started",
+            )
+            .label("Restart kernel to apply")
+            .text_color(cx.theme().warning)
+            .on_click(cx.listener(|notebook, _, _, cx| notebook.restart_kernel(cx)))
         })
     }
-}
-
-fn toolbar_button(
-    id: &'static str,
-    icon: &'static str,
-    label: &'static str,
-    tooltip: &'static str,
-) -> Button {
-    Button::new(id)
-        .ghost()
-        .xsmall()
-        .icon(Icon::empty().path(icon))
-        .label(label)
-        .tooltip(tooltip)
 }
 
 fn kernel_indicator(status: &KernelStatus, cx: &App) -> Stateful<Div> {

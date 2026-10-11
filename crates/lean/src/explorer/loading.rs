@@ -3,7 +3,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use gpui_kit::{App, Context, Task, Window};
+use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::notification::Notification;
+use gpui_kit::{Context, Window};
 
 use super::Explorer;
 use super::sorting::sort_entries;
@@ -52,59 +54,33 @@ impl FolderLoads {
 }
 
 impl Explorer {
-    pub(super) fn load_directory(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.load_directory_and_reveal(path, None, cx);
+    pub(super) fn load_directory(
+        &mut self,
+        path: PathBuf,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.load_directory_and_reveal(path, None, window, cx);
     }
 
     pub(super) fn load_directory_and_reveal(
         &mut self,
         path: PathBuf,
         reveal: Option<PathBuf>,
+        window: &Window,
         cx: &mut Context<Self>,
     ) {
-        let (id, task) = self.start_load(&path, reveal, cx);
-        cx.spawn(async move |explorer, cx| {
-            let result = task.await;
-            let update = explorer.update(cx, |explorer, cx| {
-                explorer.finish_load(path, id, result, cx);
-            });
-            if let Err(error) = update {
-                log::debug!("explorer dropped while loading a folder: {error:#}");
-            }
-        })
-        .detach();
-    }
-
-    pub(super) fn reload_folder(
-        &mut self,
-        path: PathBuf,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let (id, task) = self.start_load(&path, None, cx);
+        let id = self.loads.begin(&path, reveal);
+        let task = self.project.read(cx).read_directory(&path, cx);
         cx.spawn_in(window, async move |explorer, cx| {
             let result = task.await;
-            let update = explorer.update_in(cx, |explorer, window, cx| {
-                if explorer.finish_load(path, id, result, cx) {
-                    explorer.cancel_orphaned_edit(window, cx);
-                }
-            });
-            if let Err(error) = update {
-                log::debug!("explorer dropped while reloading a folder: {error:#}");
-            }
+            explorer
+                .update_in(cx, |explorer, window, cx| {
+                    explorer.finish_load(path, id, result, window, cx)
+                })
+                .ok();
         })
         .detach();
-    }
-
-    fn start_load(
-        &mut self,
-        path: &Path,
-        reveal: Option<PathBuf>,
-        cx: &mut Context<Self>,
-    ) -> (u64, Task<Result<Vec<DirectoryEntry>>>) {
-        let id = self.loads.begin(path, reveal);
-        let task = self.project.read(cx).read_directory(path, cx);
-        (id, task)
     }
 
     fn finish_load(
@@ -112,15 +88,16 @@ impl Explorer {
         path: PathBuf,
         id: u64,
         result: Result<Vec<DirectoryEntry>>,
+        window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> bool {
+    ) {
         let Some(load) = self.loads.finish(&path, id) else {
-            return false;
+            return;
         };
         let vanished = match result {
             Ok(entries) => self.replace_children(path.clone(), entries),
             Err(error) => {
-                self.handle_load_error(&path, &error, cx);
+                self.handle_load_error(&path, &error, window, cx);
                 Vec::new()
             }
         };
@@ -133,12 +110,20 @@ impl Explorer {
         self.scroll_to_pending_reveal();
         cx.notify();
         if self.unfolding.remove(&path) {
-            self.unfold_single_child(&path, cx);
+            self.unfold_single_child(&path, window, cx);
         }
-        !vanished.is_empty()
+        if !vanished.is_empty() {
+            self.cancel_orphaned_edit(window, cx);
+        }
     }
 
-    fn handle_load_error(&mut self, path: &Path, error: &anyhow::Error, cx: &mut App) {
+    fn handle_load_error(
+        &mut self,
+        path: &Path,
+        error: &anyhow::Error,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.unfolding.remove(path);
         let is_missing = error
             .downcast_ref::<io::Error>()
@@ -148,10 +133,8 @@ impl Explorer {
             log::debug!("{} no longer exists", path.display());
         } else {
             log::warn!("failed to read {}: {error:#}", path.display());
-            self.show_warning(
-                format!("Can't open the folder \"{}\": {error}", file_name(path)),
-                cx,
-            );
+            let message = format!("Can't open the folder \"{}\": {error}", file_name(path));
+            window.push_notification(Notification::warning(message), cx);
         }
     }
 

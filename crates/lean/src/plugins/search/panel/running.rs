@@ -113,9 +113,6 @@ impl SearchPanel {
     }
 
     fn finish_search(&mut self, cx: &mut Context<Self>) {
-        if std::mem::take(&mut self.replacing_results) {
-            self.reset_results();
-        }
         self.status = SearchStatus::Done;
         cx.notify();
     }

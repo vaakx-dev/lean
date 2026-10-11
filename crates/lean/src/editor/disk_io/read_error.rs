@@ -1,7 +1,7 @@
 use std::fmt;
 use std::io;
 
-const BYTES_PER_MEGABYTE: u64 = 1024 * 1024;
+use crate::files::settings::BYTES_PER_MEGABYTE;
 
 pub(in crate::editor) enum ReadError {
     NotFound,

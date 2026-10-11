@@ -1,9 +1,8 @@
 use gpui_kit::*;
 use serde::{Deserialize, Serialize};
 
-use super::read_state;
 use crate::app::settings::RESTORE_WINDOW_BOUNDS;
-use crate::storage::{QueuedWriter, state_file};
+use crate::storage::{QueuedWriter, read_state, state_file};
 use crate::workspace::Workspace;
 use crate::workspace::settings::RESTORE_LAYOUT;
 use crate::workspace::sidebar_resize::clamp_sidebar_width;

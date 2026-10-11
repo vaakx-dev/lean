@@ -3,7 +3,6 @@ use gpui_kit::component::{ActiveTheme as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::image::ImageState;
 use super::{Output, OutputContent};
 
 impl Output {
@@ -46,13 +45,9 @@ impl OutputContent {
                         .child(text_block(traceback.clone(), cx).text_color(theme.muted_foreground))
                 })
                 .into_any_element(),
-            OutputContent::Image { image, fallback } => match image.state() {
-                ImageState::Loading => div().into_any_element(),
-                ImageState::Ready(image) => div()
-                    .child(img(image).max_w_full().rounded(theme.radius))
-                    .into_any_element(),
-                ImageState::Failed => fallback.render(id, cx),
-            },
+            OutputContent::Image(image) => div()
+                .child(img(image.clone()).max_w_full().rounded(theme.radius))
+                .into_any_element(),
             OutputContent::Markdown(markdown) => TextView::markdown(id, markdown.clone())
                 .selectable(true)
                 .into_any_element(),

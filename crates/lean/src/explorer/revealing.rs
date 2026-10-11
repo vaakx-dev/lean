@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{App, Context, ScrollStrategy};
+use gpui_kit::{App, Context, ScrollStrategy, Window};
 
 use super::Explorer;
 use crate::plugins::WorkspaceContext;
+use crate::project::ProjectEvent;
 
 pub(crate) fn reveal_active_file(workspace: &WorkspaceContext, cx: &mut App) -> bool {
     let active = workspace
@@ -16,12 +17,12 @@ pub(crate) fn reveal_active_file(workspace: &WorkspaceContext, cx: &mut App) -> 
     };
     workspace
         .project
-        .update(cx, |project, cx| project.request_reveal(path, cx));
+        .update(cx, |_, cx| cx.emit(ProjectEvent::RevealRequested(path)));
     true
 }
 
 impl Explorer {
-    pub(super) fn follow_active_editor(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn follow_active_editor(&mut self, window: &Window, cx: &mut Context<Self>) {
         if !self.options.auto_reveal {
             return;
         }
@@ -35,11 +36,11 @@ impl Explorer {
         }
         self.followed = active.clone();
         if let Some(path) = active {
-            self.reveal_path(path, cx);
+            self.reveal_path(path, window, cx);
         }
     }
 
-    pub(super) fn reveal_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub(super) fn reveal_path(&mut self, path: PathBuf, window: &Window, cx: &mut Context<Self>) {
         if path == self.root || !path.starts_with(&self.root) {
             return;
         }
@@ -55,7 +56,7 @@ impl Explorer {
                 self.expanded.insert(folder.clone());
             }
             if !self.children.contains_key(&folder) {
-                self.load_directory(folder, cx);
+                self.load_directory(folder, window, cx);
             }
         }
         self.selected = Some(path.clone());

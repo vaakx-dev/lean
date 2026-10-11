@@ -1,5 +1,4 @@
 mod job;
-mod style_cursor;
 
 use std::ops::Range;
 

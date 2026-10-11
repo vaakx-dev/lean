@@ -1,7 +1,8 @@
 mod bell;
 mod blink;
-mod live_settings;
+mod events;
 mod selection;
+mod startup;
 mod status;
 
 use std::cell::Cell;
@@ -12,17 +13,17 @@ use alacritty_terminal::event::Event;
 use alacritty_terminal::term::Config;
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
-use gpui_kit::component::{ActiveTheme as _, v_flex};
+use gpui_kit::component::v_flex;
 use gpui_kit::*;
 
-use super::font::TerminalFont;
 use super::input::KEY_CONTEXT;
 use super::launch::TerminalLaunch;
 use super::render::{CursorAppearance, TerminalAppearance, terminal_canvas};
 use super::session::{TerminalSession, shell_name, term_config};
-use super::startup::StartupCommand;
+use crate::settings::Settings;
 use bell::Bell;
 use blink::CursorBlink;
+use startup::StartupCommand;
 use status::TerminalStatus;
 
 pub(crate) enum TerminalEvent {
@@ -32,8 +33,8 @@ pub(crate) enum TerminalEvent {
 
 pub(crate) struct TerminalView {
     working_directory: PathBuf,
-    pub(super) launch: TerminalLaunch,
-    pub(super) startup: StartupCommand,
+    launch: TerminalLaunch,
+    startup: StartupCommand,
     shell_name: SharedString,
     title: Option<SharedString>,
     session: Option<Rc<TerminalSession>>,
@@ -73,7 +74,7 @@ impl TerminalView {
             blink: CursorBlink::default(),
             bell: Bell::default(),
             _event_task: None,
-            _settings: Self::observe_settings(cx),
+            _settings: cx.observe_global::<Settings>(|view, cx| view.apply_settings(cx)),
         };
         view.start(cx);
         view
@@ -163,12 +164,22 @@ impl TerminalView {
                         view.handle_event(event, cx);
                     }
                 });
-                if let Err(error) = handled {
-                    log::debug!("terminal view dropped while its shell was running: {error:#}");
+                if handled.is_err() {
                     break;
                 }
             }
         })
+    }
+
+    fn apply_settings(&mut self, cx: &mut Context<Self>) {
+        let config = term_config(cx);
+        if config != self.term_config {
+            if let Some(session) = &self.session {
+                session.set_config(config.clone());
+            }
+            self.term_config = config;
+        }
+        cx.notify();
     }
 
     fn cursor_appearance(&mut self, window: &Window, cx: &mut Context<Self>) -> CursorAppearance {
@@ -195,8 +206,7 @@ impl Focusable for TerminalView {
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let cursor = self.cursor_appearance(window, cx);
-        let font = TerminalFont::resolve(cx);
-        let appearance = TerminalAppearance::new(cx.theme(), font, cursor);
+        let appearance = TerminalAppearance::new(cursor, cx);
         let bell_flash = self.render_bell(window, cx);
         let status = self.render_status(cx);
         v_flex()

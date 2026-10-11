@@ -1,6 +1,5 @@
 mod activation;
 mod auto_refresh;
-mod discovery;
 mod picker;
 mod python;
 pub(crate) mod settings;

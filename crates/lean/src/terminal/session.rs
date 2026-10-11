@@ -1,7 +1,5 @@
 mod config;
 mod grid_size;
-mod listener;
-mod process;
 mod selection;
 mod shell;
 
@@ -13,28 +11,37 @@ use std::ops::DerefMut;
 use std::path::Path;
 use std::sync::Arc;
 
-use alacritty_terminal::event::Event;
+use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::event_loop::{EventLoop, EventLoopSender, Msg};
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config, Term, TermMode};
-use alacritty_terminal::tty;
+use alacritty_terminal::tty::{self, Pty};
 use futures::channel::mpsc::UnboundedSender;
 use gpui_kit::App;
 
 pub(crate) use config::term_config;
 pub(crate) use grid_size::GridSize;
-use listener::EventProxy;
-use process::ShellProcess;
 pub(crate) use shell::{ShellKind, default_shell_program, shell_kind, shell_name};
 
 const WINDOW_ID: u64 = 0;
+
+#[derive(Clone)]
+pub(crate) struct EventProxy(UnboundedSender<Event>);
+
+impl EventListener for EventProxy {
+    fn send_event(&self, event: Event) {
+        if let Err(error) = self.0.unbounded_send(event) {
+            log::debug!("terminal event dropped: {error}");
+        }
+    }
+}
 
 pub(crate) struct TerminalSession {
     term: Arc<FairMutex<Term<EventProxy>>>,
     sender: EventLoopSender,
     size: Cell<GridSize>,
-    process: ShellProcess,
+    shell_pid: Option<u32>,
 }
 
 impl TerminalSession {
@@ -45,10 +52,10 @@ impl TerminalSession {
         cx: &App,
     ) -> io::Result<Self> {
         let size = GridSize::default();
-        let listener = EventProxy::new(events);
+        let listener = EventProxy(events);
         let options = shell::shell_options(working_directory, environment, cx);
         let pty = tty::new(&options, size.window_size(), WINDOW_ID)?;
-        let process = ShellProcess::of(&pty);
+        let shell_pid = shell_pid(&pty);
         let term = Term::new(term_config(cx), &size, listener.clone());
         let term = Arc::new(FairMutex::new(term));
         let event_loop = EventLoop::new(term.clone(), listener, pty, options.drain_on_exit, false)?;
@@ -58,7 +65,7 @@ impl TerminalSession {
             term,
             sender,
             size: Cell::new(size),
-            process,
+            shell_pid,
         })
     }
 
@@ -79,7 +86,10 @@ impl TerminalSession {
     }
 
     pub(crate) fn is_busy(&self) -> bool {
-        self.process.has_children()
+        self.shell_pid.is_none_or(|pid| {
+            std::fs::read_to_string(format!("/proc/{pid}/task/{pid}/children"))
+                .map_or(true, |children| !children.trim().is_empty())
+        })
     }
 
     pub(crate) fn set_config(&self, config: Config) {
@@ -116,4 +126,14 @@ impl Drop for TerminalSession {
     fn drop(&mut self) {
         self.send(Msg::Shutdown);
     }
+}
+
+#[cfg(target_os = "linux")]
+fn shell_pid(pty: &Pty) -> Option<u32> {
+    Some(pty.child().id())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn shell_pid(_: &Pty) -> Option<u32> {
+    None
 }

@@ -1,14 +1,15 @@
-mod launch;
 pub(crate) mod settings;
 
+use std::io;
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::thread;
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::{App, Window};
 
 use super::{FileAction, Plugin, PluginContext};
-use launch::launch;
 use settings::{COMMAND, EXTENSIONS};
 
 pub(super) const PLUGIN: Plugin = Plugin {
@@ -53,4 +54,19 @@ fn open_in_browser(path: &Path, window: &mut Window, cx: &mut App) {
             cx,
         );
     }
+}
+
+fn launch(command: &str, path: &Path) -> io::Result<()> {
+    let mut child = Command::new(command)
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    thread::spawn(move || {
+        if let Err(error) = child.wait() {
+            log::debug!("failed to wait for the browser: {error}");
+        }
+    });
+    Ok(())
 }

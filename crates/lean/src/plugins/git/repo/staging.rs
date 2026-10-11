@@ -5,9 +5,6 @@ use anyhow::{Context as _, Result};
 use super::repository::{head_commit, open, relative_paths};
 
 pub(crate) fn stage(root: &Path, paths: &[PathBuf]) -> Result<()> {
-    if paths.is_empty() {
-        return Ok(());
-    }
     let (repository, workdir) = open(root)?;
     let mut index = repository.index()?;
     add_paths(&mut index, paths, &workdir)?;
@@ -27,9 +24,6 @@ pub(super) fn add_paths(index: &mut git2::Index, paths: &[PathBuf], workdir: &Pa
 }
 
 pub(crate) fn unstage(root: &Path, paths: &[PathBuf]) -> Result<()> {
-    if paths.is_empty() {
-        return Ok(());
-    }
     let (repository, workdir) = open(root)?;
     let head = head_commit(&repository)?;
     let relative_paths = relative_paths(paths, &workdir)?;
@@ -41,9 +35,6 @@ pub(crate) fn unstage(root: &Path, paths: &[PathBuf]) -> Result<()> {
 }
 
 pub(crate) fn discard(root: &Path, paths: &[PathBuf]) -> Result<()> {
-    if paths.is_empty() {
-        return Ok(());
-    }
     let (repository, workdir) = open(root)?;
     let mut checkout = git2::build::CheckoutBuilder::new();
     checkout.force().disable_pathspec_match(true);

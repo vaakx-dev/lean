@@ -1,13 +1,14 @@
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::menu::ContextMenuExt as _;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, h_flex, v_flex};
 use gpui_kit::*;
 
+use super::Explorer;
 use super::context_menu::build_context_menu;
 use super::file_operations::{NewFile, NewFolder, bind_file_operations};
 use super::keyboard::{KEY_CONTEXT, NOT_EDITING_CONTEXT};
-use super::{Explorer, chevron_icon};
 use crate::app::actions::{CollapseAllFolders, RefreshExplorer};
+use crate::ui::{chevron_path, icon_button};
 
 const HEADER_HEIGHT: Pixels = px(36.);
 
@@ -46,7 +47,7 @@ impl Explorer {
             .on_click(cx.listener(|explorer, _, _, cx| explorer.toggle_root(cx)))
             .child(
                 Icon::empty()
-                    .path(chevron_icon(self.root_expanded))
+                    .path(chevron_path(self.root_expanded))
                     .size_4()
                     .text_color(theme.muted_foreground),
             )
@@ -59,50 +60,48 @@ impl Explorer {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(project_name),
             )
-            .child(
-                header_button("new-file", "icons/file-plus.svg", "New File…").on_click(
-                    cx.listener(|explorer, _, window, cx| {
-                        cx.stop_propagation();
-                        explorer.new_file(&NewFile, window, cx)
-                    }),
-                ),
-            )
-            .child(
-                header_button("new-folder", "icons/folder-plus.svg", "New Folder…").on_click(
-                    cx.listener(|explorer, _, window, cx| {
-                        cx.stop_propagation();
-                        explorer.new_folder(&NewFolder, window, cx)
-                    }),
-                ),
-            )
-            .child(
-                header_button("refresh", "icons/refresh-cw.svg", "Refresh Explorer").on_click(
-                    cx.listener(|explorer, _, window, cx| {
-                        cx.stop_propagation();
-                        explorer.refresh(&RefreshExplorer, window, cx)
-                    }),
-                ),
-            )
-            .child(
-                header_button(
-                    "collapse",
-                    "icons/list-collapse.svg",
-                    "Collapse Folders in Explorer",
-                )
-                .on_click(cx.listener(|explorer, _, window, cx| {
-                    cx.stop_propagation();
-                    explorer.collapse_all(&CollapseAllFolders, window, cx)
-                })),
-            )
+            .child(header_button(
+                "new-file",
+                "icons/file-plus.svg",
+                "New File…",
+                cx,
+                |explorer, window, cx| explorer.new_file(&NewFile, window, cx),
+            ))
+            .child(header_button(
+                "new-folder",
+                "icons/folder-plus.svg",
+                "New Folder…",
+                cx,
+                |explorer, window, cx| explorer.new_folder(&NewFolder, window, cx),
+            ))
+            .child(header_button(
+                "refresh",
+                "icons/refresh-cw.svg",
+                "Refresh Explorer",
+                cx,
+                |explorer, window, cx| explorer.refresh(&RefreshExplorer, window, cx),
+            ))
+            .child(header_button(
+                "collapse",
+                "icons/list-collapse.svg",
+                "Collapse Folders in Explorer",
+                cx,
+                |explorer, window, cx| explorer.collapse_all(&CollapseAllFolders, window, cx),
+            ))
     }
 }
 
-fn header_button(id: &'static str, icon: &'static str, tooltip: &'static str) -> Button {
-    Button::new(id)
-        .ghost()
-        .xsmall()
-        .icon(Icon::empty().path(icon))
-        .tooltip(tooltip)
+fn header_button(
+    id: &'static str,
+    icon: &'static str,
+    tooltip: &'static str,
+    cx: &Context<Explorer>,
+    run: impl Fn(&mut Explorer, &mut Window, &mut Context<Explorer>) + 'static,
+) -> Button {
+    icon_button(id, icon, tooltip).on_click(cx.listener(move |explorer, _, window, cx| {
+        cx.stop_propagation();
+        run(explorer, window, cx);
+    }))
 }
 
 impl Render for Explorer {

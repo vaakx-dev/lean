@@ -2,11 +2,10 @@ use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gpui_kit::component::WindowExt as _;
-use gpui_kit::{AppContext as _, Context, Window};
+use gpui_kit::{Context, Window};
 
+use super::report_failure;
 use crate::explorer::Explorer;
-use crate::files::file_name;
 use crate::plugins::PanelEvent;
 
 impl Explorer {
@@ -17,34 +16,29 @@ impl Explorer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let task = cx.background_spawn({
-            let path = path.clone();
-            async move { create_on_disk(&path, is_dir) }
-        });
-        cx.spawn_in(window, async move |explorer, cx| {
-            let result = task.await;
-            let update = explorer.update_in(cx, |explorer, window, cx| match result {
-                Ok(()) => explorer.finish_create(path, is_dir, cx),
-                Err(error) => {
-                    log::warn!("failed to create {}: {error}", path.display());
-                    window.push_notification(
-                        format!("Can't create \"{}\": {error}", file_name(&path)),
-                        cx,
-                    );
-                }
-            });
-            if let Err(error) = update {
-                log::debug!("explorer dropped while creating an entry: {error:#}");
-            }
-        })
-        .detach();
+        let target = path.clone();
+        self.run_disk_op(
+            move || create_on_disk(&target, is_dir),
+            window,
+            cx,
+            move |explorer, result, window, cx| match result {
+                Ok(()) => explorer.finish_create(path, is_dir, window, cx),
+                Err(error) => report_failure("create", &path, error, window, cx),
+            },
+        );
     }
 
-    fn finish_create(&mut self, path: PathBuf, is_dir: bool, cx: &mut Context<Self>) {
+    fn finish_create(
+        &mut self,
+        path: PathBuf,
+        is_dir: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(folder) = path.parent().map(Path::to_path_buf) else {
             return;
         };
-        self.finish_file_operation(folder, Some(path.clone()), cx);
+        self.finish_file_operation(folder, Some(path.clone()), window, cx);
         if !is_dir {
             cx.emit(PanelEvent::OpenFile(path));
         }

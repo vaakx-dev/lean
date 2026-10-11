@@ -6,8 +6,7 @@ use super::settings::{
     EXCLUDE, FOLLOW_SYMLINKS, INCLUDE_HIDDEN, MAX_FILE_SIZE_MB, MAX_FILE_SIZE_RANGE, MAX_RESULTS,
     MAX_RESULTS_RANGE, RESPECT_GITIGNORE, SMART_CASE, TYPING_DELAY_MS, TYPING_DELAY_RANGE,
 };
-
-const BYTES_PER_MB: u64 = 1024 * 1024;
+use crate::files::settings::BYTES_PER_MEGABYTE;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct SearchConfig {
@@ -31,7 +30,7 @@ impl SearchConfig {
             follow_symlinks: FOLLOW_SYMLINKS.get(cx),
             exclude: EXCLUDE.get(cx),
             max_file_size: u64::from(MAX_FILE_SIZE_MB.get(cx).clamp(min_size, max_size))
-                * BYTES_PER_MB,
+                * BYTES_PER_MEGABYTE,
             max_results: MAX_RESULTS.get(cx).clamp(min_results, max_results),
         }
     }

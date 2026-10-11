@@ -1,11 +1,10 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gpui_kit::component::WindowExt as _;
-use gpui_kit::{AppContext as _, Context, Window};
+use gpui_kit::{Context, Window};
 
+use super::report_failure;
 use crate::explorer::Explorer;
-use crate::files::file_name;
 use crate::plugins::PanelEvent;
 
 impl Explorer {
@@ -16,31 +15,25 @@ impl Explorer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let task = cx.background_spawn({
-            let from = from.clone();
-            let to = to.clone();
-            async move { rename_on_disk(&from, &to) }
-        });
-        cx.spawn_in(window, async move |explorer, cx| {
-            let result = task.await;
-            let update = explorer.update_in(cx, |explorer, window, cx| match result {
-                Ok(()) => explorer.finish_rename(from, to, cx),
-                Err(error) => {
-                    log::warn!("failed to rename {}: {error}", from.display());
-                    window.push_notification(
-                        format!("Can't rename \"{}\": {error}", file_name(&from)),
-                        cx,
-                    );
-                }
-            });
-            if let Err(error) = update {
-                log::debug!("explorer dropped while renaming an entry: {error:#}");
-            }
-        })
-        .detach();
+        let (source, target) = (from.clone(), to.clone());
+        self.run_disk_op(
+            move || rename_on_disk(&source, &target),
+            window,
+            cx,
+            move |explorer, result, window, cx| match result {
+                Ok(()) => explorer.finish_rename(from, to, window, cx),
+                Err(error) => report_failure("rename", &from, error, window, cx),
+            },
+        );
     }
 
-    fn finish_rename(&mut self, from: PathBuf, to: PathBuf, cx: &mut Context<Self>) {
+    fn finish_rename(
+        &mut self,
+        from: PathBuf,
+        to: PathBuf,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let moved_folders: Vec<PathBuf> = self
             .expanded
             .iter()
@@ -50,10 +43,10 @@ impl Explorer {
         self.children.retain(|folder, _| !folder.starts_with(&from));
         self.expanded.extend(moved_folders.iter().cloned());
         for folder in moved_folders {
-            self.load_directory(folder, cx);
+            self.load_directory(folder, window, cx);
         }
         if let Some(folder) = to.parent().map(Path::to_path_buf) {
-            self.finish_file_operation(folder, Some(to.clone()), cx);
+            self.finish_file_operation(folder, Some(to.clone()), window, cx);
         }
         cx.emit(PanelEvent::PathRenamed { from, to });
     }

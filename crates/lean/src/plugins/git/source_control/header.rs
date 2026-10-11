@@ -2,8 +2,8 @@ use gpui_kit::component::{ActiveTheme as _, Icon, h_flex};
 use gpui_kit::*;
 
 use super::SourceControl;
-use super::row_actions::icon_button;
 use crate::plugins::git::settings::ViewMode;
+use crate::ui::icon_button;
 
 impl SourceControl {
     pub(super) fn render_header(&self, cx: &Context<Self>) -> Div {

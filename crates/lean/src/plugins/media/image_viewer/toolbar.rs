@@ -1,9 +1,10 @@
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, Icon, Selectable as _, Sizable as _, h_flex};
+use gpui_kit::component::{ActiveTheme as _, Selectable as _, Sizable as _, h_flex};
 use gpui_kit::*;
 
 use super::ImageViewer;
 use super::zoom::Zoom;
+use crate::ui::icon_button;
 
 const SCALE_LABEL_WIDTH: Pixels = px(48.);
 
@@ -23,7 +24,7 @@ impl ImageViewer {
             .shadow_sm()
             .occlude()
             .child(
-                toolbar_button("zoom-out", "icons/zoom-out.svg", "Zoom Out")
+                icon_button("zoom-out", "icons/zoom-out.svg", "Zoom Out")
                     .on_click(cx.listener(|viewer, _, _, cx| viewer.zoom_out(cx))),
             )
             .child(
@@ -36,11 +37,11 @@ impl ImageViewer {
                     .on_click(cx.listener(|viewer, _, _, cx| viewer.zoom_to_actual_size(cx))),
             )
             .child(
-                toolbar_button("zoom-in", "icons/zoom-in.svg", "Zoom In")
+                icon_button("zoom-in", "icons/zoom-in.svg", "Zoom In")
                     .on_click(cx.listener(|viewer, _, _, cx| viewer.zoom_in(cx))),
             )
             .child(
-                toolbar_button("zoom-to-fit", "icons/maximize.svg", "Fit to View")
+                icon_button("zoom-to-fit", "icons/maximize.svg", "Fit to View")
                     .selected(self.zoom == Zoom::Fit)
                     .on_click(cx.listener(|viewer, _, _, cx| viewer.zoom_to_fit(cx))),
             )
@@ -52,12 +53,4 @@ impl ImageViewer {
             None => "Fit".into(),
         }
     }
-}
-
-fn toolbar_button(id: &'static str, icon: &'static str, tooltip: &'static str) -> Button {
-    Button::new(id)
-        .ghost()
-        .xsmall()
-        .icon(Icon::empty().path(icon))
-        .tooltip(tooltip)
 }

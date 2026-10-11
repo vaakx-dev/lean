@@ -1,6 +1,5 @@
 #[cfg(feature = "browser")]
 pub(crate) mod browser;
-mod builtin;
 #[cfg(feature = "git")]
 pub(crate) mod git;
 mod host;
@@ -15,6 +14,7 @@ pub(crate) mod settings;
 use gpui_kit::App;
 
 use crate::settings::plugin_enabled;
+use crate::{editor, explorer};
 use host::Registry;
 
 pub(crate) use gpui_kit::component::input::GutterMarker;
@@ -39,7 +39,9 @@ const PLUGINS: &[Plugin] = &[
 
 pub(crate) fn init(cx: &mut App) {
     let mut registry = Registry::default();
-    builtin::register(&mut PluginContext::new(&mut registry));
+    let mut builtin = PluginContext::new(&mut registry);
+    builtin.register_viewer(editor::TEXT_VIEWER);
+    builtin.register_panel(explorer::PANEL);
     for plugin in PLUGINS {
         if plugin_enabled(plugin.id, cx) {
             (plugin.activate)(&mut PluginContext::new(&mut registry), cx);

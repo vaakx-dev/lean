@@ -4,8 +4,8 @@ use std::path::Path;
 use anyhow::{Context as _, Result};
 
 use super::base::DiffBase;
-use super::repository::RepoFile;
 use crate::editor::file_text::decode_text;
+use crate::plugins::git::repo::{RepoFile, head_commit};
 
 const GITLINK_MODE: u32 = 0o160000;
 const BINARY_PROBE_LENGTH: usize = 8000;
@@ -80,19 +80,10 @@ fn head_blob<'repo>(
     repository: &'repo git2::Repository,
     path: &Path,
 ) -> Result<Option<git2::Blob<'repo>>> {
-    let head = match repository.head() {
-        Ok(head) => head,
-        Err(error)
-            if matches!(
-                error.code(),
-                git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
-            ) =>
-        {
-            return Ok(None);
-        }
-        Err(error) => return Err(error.into()),
+    let Some(head) = head_commit(repository)? else {
+        return Ok(None);
     };
-    let entry = match head.peel_to_tree()?.get_path(path) {
+    let entry = match head.tree()?.get_path(path) {
         Ok(entry) => entry,
         Err(error) if error.code() == git2::ErrorCode::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),

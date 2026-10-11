@@ -1,16 +1,20 @@
 mod menu;
 mod picker;
 pub(crate) mod settings;
-mod store;
 
 use std::path::{Path, PathBuf};
 
 use gpui_kit::{App, Global};
 
+use crate::storage::{QueuedWriter, read_state, state_file};
 use settings::RECENT_LIMIT;
 
 pub(crate) use menu::open_recent_menu;
 pub(crate) use picker::open_picker;
+
+const FILE_NAME: &str = "recent-projects.json";
+
+static WRITER: QueuedWriter = QueuedWriter::new();
 
 struct RecentProjects {
     current: Option<PathBuf>,
@@ -20,11 +24,11 @@ struct RecentProjects {
 impl Global for RecentProjects {}
 
 pub(crate) fn init(cx: &mut App) {
-    let mut paths = store::load();
+    let mut paths: Vec<PathBuf> = read_state(FILE_NAME).unwrap_or_default();
     let count = paths.len();
     paths.retain(|path| path.is_dir());
     if paths.len() != count {
-        store::save(paths.clone(), cx);
+        save(paths.clone(), cx);
     }
     cx.set_global(RecentProjects {
         current: None,
@@ -71,21 +75,27 @@ fn make_current(path: PathBuf, cx: &mut App) {
     recent.paths.insert(0, path);
     recent.paths.truncate(limit);
     let paths = recent.paths.clone();
-    store::save(paths, cx);
+    save(paths, cx);
 }
 
 pub(crate) fn forget(path: &Path, cx: &mut App) {
     let recent = cx.global_mut::<RecentProjects>();
     recent.paths.retain(|recent_path| recent_path != path);
     let paths = recent.paths.clone();
-    store::save(paths, cx);
+    save(paths, cx);
 }
 
 pub(crate) fn clear(cx: &mut App) {
     let recent = cx.global_mut::<RecentProjects>();
     recent.paths = recent.current.iter().cloned().collect();
     let paths = recent.paths.clone();
-    store::save(paths, cx);
+    save(paths, cx);
+}
+
+fn save(paths: Vec<PathBuf>, cx: &App) {
+    if let Some(file) = state_file(FILE_NAME) {
+        WRITER.save(file, paths, cx);
+    }
 }
 
 pub(crate) fn display_path(path: &Path) -> String {

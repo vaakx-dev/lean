@@ -39,7 +39,12 @@ impl Field {
             h_flex()
                 .gap_3()
                 .child(label)
-                .child(div().flex_shrink_0().child(control))
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .when_some(self.control_width, |slot, width| slot.w(width))
+                        .child(control),
+                )
                 .child(reset)
         };
         row.relative()

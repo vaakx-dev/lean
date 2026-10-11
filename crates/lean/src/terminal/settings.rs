@@ -18,6 +18,11 @@ pub(crate) const ENVIRONMENT: Setting<BTreeMap<String, String>> =
 pub(crate) const WORKING_DIRECTORY: Setting<WorkingDirectory> =
     Setting::new("terminal.working_directory", WorkingDirectory::ProjectRoot);
 
+pub(crate) const MIN_FONT_SIZE: f32 = 6.;
+pub(crate) const MAX_FONT_SIZE: f32 = 72.;
+pub(crate) const MIN_LINE_HEIGHT: f32 = 1.;
+pub(crate) const MAX_LINE_HEIGHT: f32 = 2.;
+
 pub(crate) const FONT_FAMILY: Setting<Option<String>> = Setting::new("terminal.font_family", None);
 pub(crate) const FONT_SIZE: Setting<Option<f32>> = Setting::new("terminal.font_size", None);
 pub(crate) const LINE_HEIGHT: Setting<f32> = Setting::new("terminal.line_height", 1.3);

@@ -1,14 +1,11 @@
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::input::Input;
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::draft::DraftInput;
 use super::field::Field;
-use super::is_stacked;
 use crate::settings::Setting;
 
-const LIST_WIDTH: Pixels = px(300.);
 const SEPARATOR: char = ',';
 
 pub(crate) fn list(
@@ -36,15 +33,10 @@ pub(crate) fn list(
         Input::new(&input)
             .disabled(options.is_disabled())
             .with_size(options.size())
-            .map(|input| {
-                if is_stacked(options) {
-                    input.w_full()
-                } else {
-                    input.w(LIST_WIDTH)
-                }
-            })
+            .w_full()
             .into_any_element()
     })
+    .control_width(px(300.))
 }
 
 fn split(text: &str) -> Vec<String> {

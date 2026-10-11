@@ -14,7 +14,7 @@ use crate::workspace::status_item;
 pub(super) const STATUS_ITEM: StatusItem = StatusItem { order: 0, build };
 
 fn build(workspace: &WorkspaceContext, _: &mut Window, cx: &mut App) -> AnyView {
-    let git = GitProject::for_workspace(workspace, cx);
+    let git = GitProject::for_workspace(workspace);
     cx.new(|cx| GitStatus::new(git, cx)).into()
 }
 

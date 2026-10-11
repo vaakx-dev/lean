@@ -41,12 +41,10 @@ impl EditorArea {
                     return;
                 }
             };
-            let update = area.update_in(cx, |area, window, cx| {
+            area.update_in(cx, |area, window, cx| {
                 area.finish_close(id, answer, window, cx)
-            });
-            if let Err(error) = update {
-                log::debug!("editor area dropped while closing a file: {error:#}");
-            }
+            })
+            .ok();
         })
         .detach();
     }
@@ -77,14 +75,12 @@ impl EditorArea {
             if !save.await {
                 return;
             }
-            let update = area.update_in(cx, |area, window, cx| {
+            area.update_in(cx, |area, window, cx| {
                 if let Some(index) = area.index_of_id(id) {
                     area.remove(index, window, cx);
                 }
-            });
-            if let Err(error) = update {
-                log::debug!("editor area dropped while closing a saved file: {error:#}");
-            }
+            })
+            .ok();
         })
         .detach();
     }

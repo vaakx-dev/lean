@@ -92,7 +92,7 @@ impl EventFilter {
     }
 }
 
-fn is_noise(kind: EventKind) -> bool {
+pub(crate) fn is_noise(kind: EventKind) -> bool {
     matches!(kind, EventKind::Access(access) if access != AccessKind::Close(AccessMode::Write))
 }
 

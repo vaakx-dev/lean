@@ -8,55 +8,38 @@ use crate::plugins::media::settings::SvgMode;
 
 const MINIMAP_CLEARANCE: Pixels = px(116.);
 
-#[derive(Clone, Copy, PartialEq)]
-pub(super) enum Mode {
-    Code,
-    Preview,
-    Split,
-}
-
-impl From<SvgMode> for Mode {
-    fn from(mode: SvgMode) -> Self {
-        match mode {
-            SvgMode::Code => Mode::Code,
-            SvgMode::Preview => Mode::Preview,
-            SvgMode::Split => Mode::Split,
-        }
-    }
-}
-
-impl Mode {
-    const ALL: [Mode; 3] = [Mode::Code, Mode::Preview, Mode::Split];
+impl SvgMode {
+    const ALL: [SvgMode; 3] = [SvgMode::Code, SvgMode::Preview, SvgMode::Split];
 
     pub(super) fn shows_code(self) -> bool {
-        matches!(self, Mode::Code | Mode::Split)
+        matches!(self, SvgMode::Code | SvgMode::Split)
     }
 
     pub(super) fn shows_preview(self) -> bool {
-        matches!(self, Mode::Preview | Mode::Split)
+        matches!(self, SvgMode::Preview | SvgMode::Split)
     }
 
     fn id(self) -> &'static str {
         match self {
-            Mode::Code => "svg-mode-code",
-            Mode::Preview => "svg-mode-preview",
-            Mode::Split => "svg-mode-split",
+            SvgMode::Code => "svg-mode-code",
+            SvgMode::Preview => "svg-mode-preview",
+            SvgMode::Split => "svg-mode-split",
         }
     }
 
     fn icon(self) -> &'static str {
         match self {
-            Mode::Code => "icons/code.svg",
-            Mode::Preview => "icons/eye.svg",
-            Mode::Split => "icons/columns-2.svg",
+            SvgMode::Code => "icons/code.svg",
+            SvgMode::Preview => "icons/eye.svg",
+            SvgMode::Split => "icons/columns-2.svg",
         }
     }
 
     fn label(self) -> &'static str {
         match self {
-            Mode::Code => "Code",
-            Mode::Preview => "Preview",
-            Mode::Split => "Code and Preview",
+            SvgMode::Code => "Code",
+            SvgMode::Preview => "Preview",
+            SvgMode::Split => "Code and Preview",
         }
     }
 }
@@ -64,7 +47,7 @@ impl Mode {
 impl SvgViewer {
     pub(super) fn render_mode_switcher(&self, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        let buttons = Mode::ALL.map(|mode| {
+        let buttons = SvgMode::ALL.map(|mode| {
             Button::new(mode.id())
                 .icon(Icon::empty().path(mode.icon()))
                 .tooltip(mode.label())
@@ -73,10 +56,10 @@ impl SvgViewer {
         div()
             .absolute()
             .top_2()
-            .when(self.mode == Mode::Code, |switcher| {
+            .when(self.mode == SvgMode::Code, |switcher| {
                 switcher.right(MINIMAP_CLEARANCE)
             })
-            .when(self.mode != Mode::Code, |switcher| switcher.right_4())
+            .when(self.mode != SvgMode::Code, |switcher| switcher.right_4())
             .p_0p5()
             .rounded(theme.radius)
             .border_1()
@@ -90,7 +73,7 @@ impl SvgViewer {
                     .xsmall()
                     .children(buttons)
                     .on_click(cx.listener(|viewer, selected: &Vec<usize>, window, cx| {
-                        let mode = selected.first().and_then(|index| Mode::ALL.get(*index));
+                        let mode = selected.first().and_then(|index| SvgMode::ALL.get(*index));
                         if let Some(mode) = mode {
                             viewer.set_mode(*mode, window, cx);
                         }

@@ -7,28 +7,28 @@ use crate::app::actions::{CollapseAllFolders, RefreshExplorer};
 use crate::project::DirectoryEntry;
 
 impl Explorer {
-    pub(super) fn toggle_folder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub(super) fn toggle_folder(&mut self, path: PathBuf, window: &Window, cx: &mut Context<Self>) {
         if self.expanded.remove(&path) {
             self.rebuild_visible();
             cx.notify();
         } else {
-            self.expand_folder(path, cx);
+            self.expand_folder(path, window, cx);
         }
     }
 
-    pub(super) fn expand_folder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub(super) fn expand_folder(&mut self, path: PathBuf, window: &Window, cx: &mut Context<Self>) {
         self.expanded.insert(path.clone());
         if self.children.contains_key(&path) {
             self.rebuild_visible();
             cx.notify();
-            self.unfold_single_child(&path, cx);
+            self.unfold_single_child(&path, window, cx);
             if self.project.read(cx).watches_folder(&path) {
                 return;
             }
         } else if self.options.compact_folders {
             self.unfolding.insert(path.clone());
         }
-        self.load_directory(path, cx);
+        self.load_directory(path, window, cx);
     }
 
     pub(super) fn toggle_root(&mut self, cx: &mut Context<Self>) {
@@ -41,14 +41,19 @@ impl Explorer {
         self.project.update(cx, |project, _| project.rescan());
     }
 
-    pub(super) fn show_recreated_file(&mut self, path: &Path, cx: &mut Context<Self>) {
+    pub(super) fn show_recreated_file(
+        &mut self,
+        path: &Path,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let loaded_folder = path
             .ancestors()
             .skip(1)
             .find(|folder| self.children.contains_key(*folder))
             .map(Path::to_path_buf);
         if let Some(folder) = loaded_folder {
-            self.load_directory(folder, cx);
+            self.load_directory(folder, window, cx);
         }
     }
 

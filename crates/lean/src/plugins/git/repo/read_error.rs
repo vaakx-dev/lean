@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use gpui_kit::SharedString;
 
+use super::repository::canonical;
+
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct GitReadError {
     pub(crate) message: SharedString,
@@ -32,9 +34,5 @@ fn trust_command(root: &Path) -> SharedString {
 
 fn repository_folder(root: &Path) -> Option<PathBuf> {
     let git_folder = git2::Repository::discover_path(root, std::iter::empty::<&Path>()).ok()?;
-    let git_folder = dunce::canonicalize(&git_folder).unwrap_or_else(|error| {
-        log::debug!("failed to canonicalize {}: {error}", git_folder.display());
-        git_folder.clone()
-    });
-    git_folder.parent().map(Path::to_path_buf)
+    canonical(&git_folder).parent().map(Path::to_path_buf)
 }

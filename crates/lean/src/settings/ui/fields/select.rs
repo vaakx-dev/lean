@@ -7,7 +7,6 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::field::Field;
-use super::is_stacked;
 use crate::settings::{Setting, SettingValue};
 
 pub(crate) fn select<T: SettingValue>(
@@ -36,7 +35,7 @@ pub(crate) fn select<T: SettingValue>(
             .outline()
             .disabled(options.is_disabled())
             .with_size(options.size())
-            .when(is_stacked(options), |button| button.w_full())
+            .when(options.layout() == Axis::Vertical, |button| button.w_full())
             .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
                 choices
                     .iter()

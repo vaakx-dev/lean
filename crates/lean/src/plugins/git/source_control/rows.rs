@@ -2,15 +2,17 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use gpui_kit::component::{Icon, Theme, h_flex};
+use gpui_kit::component::button::Button;
+use gpui_kit::component::{Disableable as _, Theme, h_flex};
 use gpui_kit::*;
 
 use super::SourceControl;
 use super::changes::{ChangeGroup, ChangedFile, push_tree};
-use super::row_actions::ROW_GROUP;
 use crate::plugins::git::settings::{VIEW_MODE, ViewMode};
+use crate::ui::{clickable_list_row, list_row};
 
-pub(super) const ROW_HEIGHT: Pixels = px(24.);
+const ROW_HEIGHT: Pixels = px(24.);
+const ROW_GROUP: &str = "source-control-row";
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum Section {
@@ -143,37 +145,24 @@ impl SourceControl {
 }
 
 pub(super) fn row_container(index: usize, theme: &Theme) -> Stateful<Div> {
-    h_flex()
-        .id(("source-control-row", index))
-        .group(ROW_GROUP)
-        .w_full()
-        .h(ROW_HEIGHT)
-        .flex_shrink_0()
-        .gap_1p5()
-        .pr_1()
-        .overflow_hidden()
-        .rounded(theme.radius)
+    list_row(("source-control-row", index), ROW_HEIGHT, theme).group(ROW_GROUP)
 }
 
 pub(super) fn clickable_row(index: usize, theme: &Theme) -> Stateful<Div> {
-    row_container(index, theme)
-        .cursor_pointer()
-        .hover(|style| style.bg(theme.list_hover))
+    clickable_list_row(("source-control-row", index), ROW_HEIGHT, theme).group(ROW_GROUP)
 }
 
 pub(super) fn indent(depth: usize) -> Pixels {
     px(24. + depth as f32 * 12.)
 }
 
-pub(super) fn chevron(expanded: bool, theme: &Theme) -> Icon {
-    let path = if expanded {
-        "icons/chevron-down.svg"
-    } else {
-        "icons/chevron-right.svg"
-    };
-    Icon::empty()
-        .path(path)
-        .size_4()
+pub(super) fn hover_actions(actions: Vec<Button>, busy: bool) -> Stateful<Div> {
+    h_flex()
+        .id("row-actions")
         .flex_shrink_0()
-        .text_color(theme.muted_foreground)
+        .gap(px(2.))
+        .invisible()
+        .group_hover(ROW_GROUP, |style| style.visible())
+        .on_click(|_, _, cx| cx.stop_propagation())
+        .children(actions.into_iter().map(|action| action.disabled(busy)))
 }

@@ -1,20 +1,18 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use futures::StreamExt as _;
-use futures::channel::mpsc::{self, UnboundedReceiver};
 use gpui_kit::component::ThemeConfig;
-use gpui_kit::{App, AsyncApp, Global, Task};
-use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
+use gpui_kit::{App, Global, Task};
+use notify::{Event, EventKind};
 
 use super::{appearance, catalog};
 use crate::storage::config_file;
+use crate::watcher::FolderWatch;
 
 const FOLDER_NAME: &str = "themes";
 const RELOAD_DELAY: Duration = Duration::from_millis(200);
 
 struct UserThemesWatcher {
-    _watcher: RecommendedWatcher,
     _task: Task<()>,
 }
 
@@ -44,42 +42,30 @@ pub(super) fn watch(cx: &mut App) {
         log::warn!("failed to create {}: {error}", folder.display());
         return;
     }
-    let (sender, receiver) = mpsc::unbounded::<()>();
-    let handler = move |event: notify::Result<Event>| {
-        if let Ok(event) = event
-            && !matches!(event.kind, EventKind::Access(_))
+    let is_theme_change = |event: &Event| {
+        !matches!(event.kind, EventKind::Access(_))
             && event.paths.iter().any(|path| is_theme_file(path))
-        {
-            sender.unbounded_send(()).ok();
-        }
     };
-    let mut watcher = match RecommendedWatcher::new(handler, Config::default()) {
-        Ok(watcher) => watcher,
+    let mut changes = match FolderWatch::new(RELOAD_DELAY, is_theme_change) {
+        Ok(changes) => changes,
         Err(error) => {
             log::warn!("failed to watch {}: {error}", folder.display());
             return;
         }
     };
-    if let Err(error) = watcher.watch(&folder, RecursiveMode::NonRecursive) {
+    if let Err(error) = changes.watch(&folder) {
         log::warn!("failed to watch {}: {error}", folder.display());
         return;
     }
-    let task = cx.spawn(async move |cx| reload_on_change(receiver, cx).await);
-    cx.set_global(UserThemesWatcher {
-        _watcher: watcher,
-        _task: task,
+    let task = cx.spawn(async move |cx| {
+        while changes.next_change(cx).await {
+            cx.update(|cx| {
+                catalog::load(cx);
+                appearance::apply_current(cx);
+            });
+        }
     });
-}
-
-async fn reload_on_change(mut changes: UnboundedReceiver<()>, cx: &mut AsyncApp) {
-    while changes.next().await.is_some() {
-        cx.background_executor().timer(RELOAD_DELAY).await;
-        while changes.try_recv().is_ok() {}
-        cx.update(|cx| {
-            catalog::load(cx);
-            appearance::apply_current(cx);
-        });
-    }
+    cx.set_global(UserThemesWatcher { _task: task });
 }
 
 fn themes_folder() -> Option<PathBuf> {

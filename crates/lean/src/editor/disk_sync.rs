@@ -11,13 +11,6 @@ use crate::watcher::FsChanges;
 
 pub(super) use notices::dismiss_disk_notice;
 
-struct DiskCheck {
-    id: u64,
-    path: PathBuf,
-    known: Option<DiskStamp>,
-    force: bool,
-}
-
 impl EditorArea {
     pub(crate) fn apply_fs_changes(
         &mut self,
@@ -29,7 +22,10 @@ impl EditorArea {
             self.follow_rename(from, to, cx);
         }
         let mut checks = Vec::new();
-        for file in self.files.iter_mut().filter(|file| file.is_file()) {
+        for (index, file) in self.files.iter_mut().enumerate() {
+            if !file.is_file() {
+                continue;
+            }
             let changed = file
                 .path
                 .ancestors()
@@ -41,61 +37,50 @@ impl EditorArea {
             if !(changed || ignored || changes.rescan) {
                 continue;
             }
-            if file.disk.is_saving() {
+            if file.disk.saving.is_some() {
                 file.disk.changed_while_saving = true;
                 continue;
             }
-            checks.push(DiskCheck {
-                id: file.id,
-                path: file.path.clone(),
-                known: if changed {
-                    file.disk.written
-                } else {
-                    file.disk.stamp
-                },
-                force: false,
-            });
+            let known = if changed {
+                file.disk.written
+            } else {
+                file.disk.stamp
+            };
+            checks.push((index, known));
         }
-        for check in checks {
-            self.check_disk(check, window, cx);
+        for (index, known) in checks {
+            self.check_disk(index, known, false, window, cx);
         }
     }
 
     pub(super) fn revert(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(file) = self.files.get(index).filter(|file| file.is_file()) else {
-            return;
-        };
-        let check = DiskCheck {
-            id: file.id,
-            path: file.path.clone(),
-            known: None,
-            force: true,
-        };
-        self.check_disk(check, window, cx);
+        self.check_disk(index, None, true, window, cx);
     }
 
-    pub(super) fn revert_file(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(index) = self.index_of_id(id) {
-            self.revert(index, window, cx);
-        }
-    }
-
-    pub(super) fn recheck_disk(
+    pub(super) fn check_disk(
         &mut self,
         index: usize,
+        known: Option<DiskStamp>,
+        force: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(file) = self.files.get(index).filter(|file| file.is_file()) else {
+        let Some(file) = self.files.get_mut(index).filter(|file| file.is_file()) else {
             return;
         };
-        let check = DiskCheck {
-            id: file.id,
-            path: file.path.clone(),
-            known: file.disk.written,
-            force: false,
-        };
-        self.check_disk(check, window, cx);
+        let id = file.id;
+        let path = file.path.clone();
+        let read = cx.background_spawn({
+            let path = path.clone();
+            async move { read_changed_file(&path, known) }
+        });
+        file.disk._check = cx.spawn_in(window, async move |area, cx| {
+            let result = read.await;
+            area.update_in(cx, |area, window, cx| {
+                area.apply_disk_read(id, path, force, result, window, cx)
+            })
+            .ok();
+        });
     }
 
     fn follow_rename(&mut self, from: &Path, to: &Path, cx: &mut Context<Self>) {
@@ -108,42 +93,23 @@ impl EditorArea {
         }
     }
 
-    fn check_disk(&mut self, check: DiskCheck, window: &mut Window, cx: &mut Context<Self>) {
-        let read = cx.background_spawn({
-            let path = check.path.clone();
-            let known = check.known;
-            async move { read_changed_file(&path, known) }
-        });
-        let id = check.id;
-        let task = cx.spawn_in(window, async move |area, cx| {
-            let result = read.await;
-            let update = area.update_in(cx, |area, window, cx| {
-                area.apply_disk_read(check, result, window, cx)
-            });
-            if let Err(error) = update {
-                log::debug!("editor area dropped while checking a file on disk: {error:#}");
-            }
-        });
-        if let Some(index) = self.index_of_id(id) {
-            self.files[index].disk._check = task;
-        }
-    }
-
     fn apply_disk_read(
         &mut self,
-        check: DiskCheck,
+        id: u64,
+        path: PathBuf,
+        force: bool,
         result: Result<Option<DiskFile>, ReadError>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self.index_of_id(check.id) else {
+        let Some(index) = self.index_of_id(id) else {
             return;
         };
         let file = &mut self.files[index];
-        if file.path != check.path {
+        if file.path != path {
             return;
         }
-        if file.disk.is_saving() {
+        if file.disk.saving.is_some() {
             file.disk.changed_while_saving = true;
             return;
         }
@@ -151,16 +117,16 @@ impl EditorArea {
         let keeps_edits = file.dirty || file.view.running_work(cx).is_some();
         match result {
             Ok(None) => {}
-            Ok(Some(disk)) if check.force => {
+            Ok(Some(disk)) if force => {
                 self.reload(index, disk, window, cx);
             }
             Ok(Some(disk)) if disk.hash == saved_hash => {
                 self.mark_unchanged(index, disk, window, cx)
             }
-            Ok(Some(_)) if keeps_edits => self.mark_conflict(index, window, cx),
+            Ok(Some(_)) if keeps_edits => self.mark_conflict(index, false, window, cx),
             Ok(Some(disk)) => self.apply_external_change(index, disk, window, cx),
             Err(ReadError::NotFound) => self.mark_deleted(index, cx),
-            Err(error) => log::debug!("failed to check {}: {error}", check.path.display()),
+            Err(error) => log::debug!("failed to check {}: {error}", path.display()),
         }
     }
 }

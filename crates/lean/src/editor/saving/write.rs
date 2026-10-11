@@ -6,10 +6,11 @@ use futures::FutureExt as _;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::*;
 
+use super::super::disk_io::{DiskStamp, ReadError, read_changed_file, write_atomically};
 use super::super::disk_state::{SaveInFlight, SaveOutcome};
 use super::super::disk_sync::dismiss_disk_notice;
+use super::super::file_text::content_hash;
 use super::super::{EditorArea, EditorAreaEvent};
-use super::snapshot::{DiskWrite, ExpectedDisk, write_snapshot};
 use crate::files::settings::SaveFormat;
 
 struct SaveRequest {
@@ -18,11 +19,20 @@ struct SaveRequest {
     on_saved: Option<Box<dyn FnOnce(&mut App)>>,
 }
 
+struct ExpectedDisk {
+    stamp: Option<DiskStamp>,
+    hash: u64,
+}
+
+enum DiskWrite {
+    Written { stamp: DiskStamp, hash: u64 },
+    ChangedOnDisk,
+}
+
 impl EditorArea {
     pub(super) fn write(
         &mut self,
         index: usize,
-        check_disk: bool,
         format: SaveFormat,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -46,7 +56,7 @@ impl EditorArea {
         };
         let encode = snapshot.encode;
         let recreate_folder = file.deleted;
-        let expected = (check_disk && !file.deleted).then_some(ExpectedDisk {
+        let expected = (!file.disk.conflict && !file.deleted).then_some(ExpectedDisk {
             stamp: file.disk.stamp,
             hash: file.disk.saved_hash,
         });
@@ -61,10 +71,7 @@ impl EditorArea {
                 area.update_in(cx, |area, window, cx| {
                     area.finish_save(request, result, window, cx)
                 })
-                .unwrap_or_else(|error| {
-                    log::debug!("editor area dropped while saving a file: {error:#}");
-                    SaveOutcome::Failed
-                })
+                .unwrap_or(SaveOutcome::Failed)
             })
             .shared();
         file.disk.saving = Some(job.clone());
@@ -80,37 +87,34 @@ impl EditorArea {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> SaveOutcome {
+        let outcome = match &result {
+            Ok(DiskWrite::Written { .. }) => SaveOutcome::Saved,
+            Ok(DiskWrite::ChangedOnDisk) => SaveOutcome::ChangedOnDisk,
+            Err(_) => SaveOutcome::Failed,
+        };
         let Some(index) = self.index_of_id(request.id) else {
-            return match result {
-                Ok(DiskWrite::Written { .. }) => SaveOutcome::Saved,
-                Ok(DiskWrite::ChangedOnDisk) => SaveOutcome::ChangedOnDisk,
-                Err(_) => SaveOutcome::Failed,
-            };
+            return outcome;
         };
         let file = &mut self.files[index];
         file.disk.saving = None;
         let recheck = std::mem::take(&mut file.disk.changed_while_saving);
-        let outcome = match result {
+        match result {
             Ok(DiskWrite::Written { stamp, hash }) => {
                 if file.disk.conflict {
                     dismiss_disk_notice(file.id, window, cx);
                 }
                 file.disk.saved(hash, stamp);
                 self.apply_saved(index, request, cx);
-                SaveOutcome::Saved
             }
-            Ok(DiskWrite::ChangedOnDisk) => {
-                self.mark_conflict(index, window, cx);
-                SaveOutcome::ChangedOnDisk
-            }
+            Ok(DiskWrite::ChangedOnDisk) => self.mark_conflict(index, false, window, cx),
             Err(error) => {
                 report_save_error(&file.path, &error, window, cx);
                 cx.notify();
-                SaveOutcome::Failed
             }
-        };
+        }
         if recheck && outcome != SaveOutcome::ChangedOnDisk {
-            self.recheck_disk(index, window, cx);
+            let known = self.files[index].disk.written;
+            self.check_disk(index, known, false, window, cx);
         }
         outcome
     }
@@ -126,6 +130,34 @@ impl EditorArea {
         }
         cx.emit(EditorAreaEvent::Saved);
         cx.notify();
+    }
+}
+
+fn write_snapshot(
+    encode: Box<dyn FnOnce() -> Vec<u8> + Send>,
+    path: &Path,
+    recreate_folder: bool,
+    expected: Option<ExpectedDisk>,
+) -> io::Result<DiskWrite> {
+    if let Some(expected) = expected
+        && changed_on_disk(path, &expected)
+    {
+        return Ok(DiskWrite::ChangedOnDisk);
+    }
+    let bytes = encode();
+    let hash = content_hash(&bytes);
+    let stamp = write_atomically(path, &bytes, recreate_folder)?;
+    Ok(DiskWrite::Written { stamp, hash })
+}
+
+fn changed_on_disk(path: &Path, expected: &ExpectedDisk) -> bool {
+    match read_changed_file(path, expected.stamp) {
+        Ok(None) | Err(ReadError::NotFound) => false,
+        Ok(Some(disk)) => disk.hash != expected.hash,
+        Err(error) => {
+            log::debug!("can't check {} before saving: {error}", path.display());
+            true
+        }
     }
 }
 

@@ -1,11 +1,11 @@
 use gpui_kit::{App, KeyBinding, actions};
 
-use super::font_size::{DecreaseFontSize, IncreaseFontSize, ResetFontSize};
 use super::registry::{bind_command, bind_defaults};
 use crate::app::actions::{
     CloseActiveEditor, NextEditor, OpenFolder, OpenRecent, OpenSettings, PreviousEditor, Quit,
     SaveActiveEditor, ShowPanel, ToggleSidebar, ToggleTerminal,
 };
+use crate::editor::settings::font::{DecreaseFontSize, IncreaseFontSize, ResetFontSize};
 use crate::{explorer, terminal};
 
 actions!(editor, [GoToLine]);

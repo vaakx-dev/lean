@@ -2,15 +2,17 @@ use gpui_kit::component::WindowExt as _;
 use gpui_kit::*;
 
 use super::Workspace;
-use super::shortcuts::bind_shortcuts;
 use crate::app::actions::{
     About, CloseActiveEditor, NextEditor, OpenSettings, PreviousEditor, SaveActiveEditor,
     ShowPanel, ToggleSidebar, ToggleTerminal,
 };
-use crate::settings;
+use crate::app::keymap::{GoToLine, RevealActiveFile};
+use crate::{explorer, settings};
 
 pub(super) fn bind_commands(element: Stateful<Div>, cx: &Context<Workspace>) -> Stateful<Div> {
-    bind_shortcuts(element, cx)
+    element
+        .on_action(cx.listener(Workspace::go_to_line))
+        .on_action(cx.listener(Workspace::reveal_active_file))
         .on_action(cx.listener(Workspace::open_folder))
         .on_action(cx.listener(Workspace::open_recent))
         .on_action(cx.listener(Workspace::open_recent_project))
@@ -59,6 +61,23 @@ impl Workspace {
         self.context
             .editor_area
             .update(cx, |area, cx| area.activate_previous(window, cx));
+    }
+
+    fn go_to_line(&mut self, _: &GoToLine, window: &mut Window, cx: &mut Context<Self>) {
+        self.context
+            .editor_area
+            .update(cx, |area, cx| area.prompt_go_to_line(window, cx));
+    }
+
+    fn reveal_active_file(
+        &mut self,
+        _: &RevealActiveFile,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if explorer::reveal_active_file(&self.context, cx) {
+            self.show_panel(explorer::PANEL.id, window, cx);
+        }
     }
 
     fn toggle_sidebar(&mut self, _: &ToggleSidebar, window: &mut Window, cx: &mut Context<Self>) {

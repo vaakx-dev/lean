@@ -1,8 +1,7 @@
 mod classify;
-mod coverage;
-mod debounce;
 mod disk_entry;
 mod filter;
+mod folder_watch;
 mod health;
 mod metadata;
 mod recovery;
@@ -13,15 +12,15 @@ mod walk;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use gpui_kit::{AppContext as _, AsyncApp, Context, SharedString, Task, WeakEntity};
+use gpui_kit::{AppContext as _, AsyncApp, Context, Task, WeakEntity};
 
-use crate::project::{IgnoreCache, Project};
-use coverage::covers;
-use debounce::debounce;
+use crate::project::{FilesChanged, IgnoreCache, Project, ProjectEvent};
+use crate::settings::Setting;
 use filter::{EventFilter, RawEvent};
 use health::Health;
 use metadata::SharedMetadata;
@@ -30,10 +29,15 @@ use shared_paths::SharedPaths;
 use skipped::SkippedFolders;
 use tree::WatchedTree;
 
-pub(crate) use debounce::DEBOUNCE_MS;
 pub(crate) use disk_entry::DiskEntry;
+pub(crate) use filter::is_noise;
+pub(crate) use folder_watch::FolderWatch;
 pub(crate) use metadata::MetadataWatch;
 
+pub(crate) const DEBOUNCE_MS: Setting<u64> = Setting::new("watcher.debounce_ms", 150);
+
+const SHORTEST_DEBOUNCE_MS: u64 = 50;
+const LONGEST_DEBOUNCE_MS: u64 = 2000;
 const WATCH_EACH_FOLDER: bool = cfg!(any(target_os = "linux", target_os = "android"));
 
 #[derive(Default)]
@@ -90,17 +94,11 @@ pub(crate) struct FsWatcher {
 }
 
 impl FsWatcher {
-    pub(crate) fn start(
-        root: PathBuf,
-        metadata: MetadataWatch,
-        ignore: IgnoreCache,
-        open_files: HashSet<PathBuf>,
-        cx: &mut Context<Project>,
-    ) -> Self {
+    pub(crate) fn start(root: PathBuf, ignore: IgnoreCache, cx: &mut Context<Project>) -> Self {
         let (sender, receiver) = mpsc::unbounded();
         let health = Health::default();
-        let open_files = SharedPaths::new(open_files);
-        let metadata = SharedMetadata::new(metadata);
+        let open_files = SharedPaths::default();
+        let metadata = SharedMetadata::default();
         let tree = WatchedTree::new(
             root,
             ignore,
@@ -116,21 +114,19 @@ impl FsWatcher {
             open_files: open_files.clone(),
         };
         let event_sender = sender.clone();
-        let watch = Watch {
-            health: health.clone(),
-            requests: sender.clone(),
-            project: cx.weak_entity(),
-        };
+        let requests = sender.clone();
+        let watch_health = health.clone();
         let task = cx.spawn(async move |project, cx| {
             let tree = cx
                 .background_spawn(async move { tree.start(filter, event_sender) })
                 .await;
-            let reconcile =
-                project.update(cx, |project, cx| project.reconcile_after_watch_start(cx));
+            let reconcile = project.update(cx, |_, cx| {
+                cx.emit(FilesChanged(Rc::new(FsChanges::reconcile())))
+            });
             if reconcile.is_err() {
                 return;
             }
-            forward_changes(receiver, tree, watch, cx).await;
+            forward_changes(receiver, tree, watch_health, requests, project, cx).await;
         });
         Self {
             metadata,
@@ -144,8 +140,9 @@ impl FsWatcher {
     }
 
     pub(crate) fn set_metadata(&self, watch: MetadataWatch) {
-        self.metadata.replace(watch);
-        self.requests.unbounded_send(RawEvent::empty()).ok();
+        if self.metadata.replace(watch) {
+            self.requests.unbounded_send(RawEvent::empty()).ok();
+        }
     }
 
     pub(crate) fn is_healthy(&self) -> bool {
@@ -153,7 +150,22 @@ impl FsWatcher {
     }
 
     pub(crate) fn watches(&self, folder: &Path) -> bool {
-        self.health.is_ok() && covers(&self.watched, &self.skipped, folder)
+        if !self.health.is_ok() {
+            return false;
+        }
+        if WATCH_EACH_FOLDER {
+            return self.watched.contains(folder);
+        }
+        let watched_root = self
+            .watched
+            .read()
+            .iter()
+            .find(|root| folder.starts_with(root))
+            .cloned();
+        let Some(root) = watched_root else {
+            return false;
+        };
+        !self.skipped.contains_self_or_parent_of(folder) && !crosses_symlink(&root, folder)
     }
 
     pub(crate) fn unwatched_folders(&self) -> HashSet<PathBuf> {
@@ -161,6 +173,9 @@ impl FsWatcher {
     }
 
     pub(crate) fn set_open_files(&self, files: HashSet<PathBuf>) {
+        if *self.open_files.read() == files {
+            return;
+        }
         self.open_files.replace(files);
         self.requests.unbounded_send(RawEvent::empty()).ok();
     }
@@ -170,37 +185,46 @@ impl FsWatcher {
     }
 }
 
-struct Watch {
-    health: Health,
-    requests: UnboundedSender<RawEvent>,
-    project: WeakEntity<Project>,
-}
-
-impl Watch {
-    fn report_health(&self, recovery: &mut Recovery, cx: &mut AsyncApp) -> bool {
-        let Some(failure) = recovery.check(&self.health, &self.requests, cx) else {
-            return true;
-        };
-        let message = SharedString::from(failure.message());
-        self.project
-            .update(cx, |project, cx| project.report_watch_failure(message, cx))
-            .is_ok()
-    }
+fn crosses_symlink(root: &Path, folder: &Path) -> bool {
+    folder
+        .ancestors()
+        .take_while(|ancestor| *ancestor != root)
+        .any(|ancestor| {
+            ancestor
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        })
 }
 
 async fn forward_changes(
     mut receiver: UnboundedReceiver<RawEvent>,
     mut tree: WatchedTree,
-    watch: Watch,
+    health: Health,
+    requests: UnboundedSender<RawEvent>,
+    project: WeakEntity<Project>,
     cx: &mut AsyncApp,
 ) {
     let mut recovery = Recovery::default();
-    if !watch.report_health(&mut recovery, cx) {
-        return;
-    }
-    while let Some(first) = receiver.next().await {
-        let delay = cx.update(|cx| debounce(cx));
-        cx.background_executor().timer(delay).await;
+    loop {
+        if let Some(message) = recovery.check(&health, &requests, cx) {
+            let reported = project.update(cx, |_, cx| {
+                cx.emit(ProjectEvent::WatchFailed(message.into()))
+            });
+            if reported.is_err() {
+                return;
+            }
+        }
+        let Some(first) = receiver.next().await else {
+            return;
+        };
+        let debounce_ms = cx.update(|cx| {
+            DEBOUNCE_MS
+                .get(cx)
+                .clamp(SHORTEST_DEBOUNCE_MS, LONGEST_DEBOUNCE_MS)
+        });
+        cx.background_executor()
+            .timer(Duration::from_millis(debounce_ms))
+            .await;
         let mut events = vec![first];
         while let Ok(event) = receiver.try_recv() {
             events.push(event);
@@ -215,16 +239,12 @@ async fn forward_changes(
             })
             .await;
         tree = returned;
-        if let Some(changes) = changes {
-            let update = watch
-                .project
-                .update(cx, |project, cx| project.apply_fs_changes(changes, cx));
-            if update.is_err() {
-                break;
-            }
-        }
-        if !watch.report_health(&mut recovery, cx) {
-            break;
+        if let Some(changes) = changes
+            && project
+                .update(cx, |project, cx| project.apply_fs_changes(changes, cx))
+                .is_err()
+        {
+            return;
         }
     }
 }

@@ -13,6 +13,7 @@ mod storage;
 mod terminal;
 mod theme;
 mod toolchain;
+mod ui;
 mod watcher;
 mod workspace;
 

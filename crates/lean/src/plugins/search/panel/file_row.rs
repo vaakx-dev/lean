@@ -1,10 +1,11 @@
-use gpui_kit::component::{ActiveTheme as _, Theme};
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::SearchPanel;
-use super::rows::{chevron, clickable_row};
+use super::rows::clickable_row;
 use crate::files::file_icon;
+use crate::ui::{chevron, count_badge};
 
 impl SearchPanel {
     pub(super) fn render_file_row(
@@ -44,18 +45,4 @@ impl SearchPanel {
             .on_click(cx.listener(move |panel, _, _, cx| panel.toggle_file(file_index, cx)));
         Some(row.into_any_element())
     }
-}
-
-fn count_badge(count: usize, theme: &Theme) -> Div {
-    div()
-        .flex_shrink_0()
-        .min_w(px(18.))
-        .px_1p5()
-        .flex()
-        .justify_center()
-        .rounded_full()
-        .bg(theme.accent)
-        .text_xs()
-        .text_color(theme.muted_foreground)
-        .child(count.to_string())
 }

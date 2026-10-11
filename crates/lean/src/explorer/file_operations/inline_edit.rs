@@ -110,7 +110,7 @@ impl Explorer {
         if folder == self.root {
             self.root_expanded = true;
         } else {
-            self.expand_folder(folder.clone(), cx);
+            self.expand_folder(folder.clone(), window, cx);
         }
         self.begin_edit(kind, folder, SharedString::default(), 0..0, window, cx);
     }

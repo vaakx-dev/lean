@@ -6,23 +6,12 @@ use serde_json::{Map, Value};
 
 const LEGACY_PLUGINS_KEY: &str = "plugins";
 
-pub(super) struct Loaded {
-    pub(super) values: Map<String, Value>,
-    pub(super) error: Option<SharedString>,
-}
-
-pub(super) fn load_initial(file: &Path) -> Loaded {
+pub(super) fn load_initial(file: &Path) -> (Map<String, Value>, Option<SharedString>) {
     match read(file) {
-        Ok(values) => Loaded {
-            values,
-            error: None,
-        },
+        Ok(values) => (values, None),
         Err(error) => {
             log::warn!("failed to load {}: {error}", file.display());
-            Loaded {
-                values: Map::new(),
-                error: Some(back_up(file, &error).into()),
-            }
+            (Map::new(), Some(back_up(file, &error).into()))
         }
     }
 }

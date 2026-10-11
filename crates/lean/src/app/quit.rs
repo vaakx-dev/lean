@@ -12,7 +12,7 @@ pub(super) fn quit(cx: &mut App) {
 
 pub(crate) fn restart(cx: &mut App) {
     close_windows_then(cx, |cx| {
-        settings::save_now(cx);
+        settings::save_now();
         match relaunch() {
             Ok(()) => cx.quit(),
             Err(error) => log::error!("failed to restart Lean: {error}"),
@@ -49,13 +49,9 @@ async fn confirm_quit(window: AnyWindowHandle, cx: &mut AsyncApp) -> bool {
             workspace.confirm_close(CloseIntent::Quit, window, cx)
         }))
     });
-    match confirmation {
-        Ok(Some(confirmation)) => confirmation.await,
-        Ok(None) => true,
-        Err(error) => {
-            log::debug!("a window closed while quitting: {error:#}");
-            true
-        }
+    match confirmation.ok().flatten() {
+        Some(confirmation) => confirmation.await,
+        None => true,
     }
 }
 

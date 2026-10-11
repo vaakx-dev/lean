@@ -58,21 +58,59 @@ impl Workspace {
                 Choice::Proceed => true,
                 Choice::Cancel => false,
             };
-            let update = workspace.update(cx, |workspace, _| workspace.confirming_close = false);
-            if let Err(error) = update {
-                log::debug!("workspace dropped while confirming a close: {error:#}");
-            }
+            workspace
+                .update(cx, |workspace, _| workspace.confirming_close = false)
+                .ok();
             confirmed
         })
     }
 
-    pub(super) fn needs_close_confirmation(&self, intent: CloseIntent, cx: &App) -> bool {
+    pub(super) fn guard_window_close(window: &Window, cx: &Context<Self>) {
+        let workspace = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            may_close_window(&workspace, window, cx)
+        });
+    }
+
+    pub(super) fn close_window_handler(
+        cx: &Context<Self>,
+    ) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+        let workspace = cx.weak_entity();
+        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+            if may_close_window(&workspace, window, cx) {
+                window.remove_window();
+            }
+        }
+    }
+
+    fn allows_window_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.save_window_state(window);
+        if self.close_confirmed || !self.needs_close_confirmation(CloseIntent::Quit, cx) {
+            return true;
+        }
+        let confirmation = self.confirm_close(CloseIntent::Quit, window, cx);
+        cx.spawn_in(window, async move |workspace, cx| {
+            if !confirmation.await {
+                return;
+            }
+            workspace
+                .update_in(cx, |workspace, window, _| {
+                    workspace.close_confirmed = true;
+                    window.remove_window();
+                })
+                .ok();
+        })
+        .detach();
+        false
+    }
+
+    fn needs_close_confirmation(&self, intent: CloseIntent, cx: &App) -> bool {
         self.confirming_close || self.close_prompt(intent, cx).is_some()
     }
 
     fn close_prompt(&self, intent: CloseIntent, cx: &App) -> Option<ClosePrompt> {
         let unsaved = if CONFIRM_UNSAVED_CLOSE.get(cx) {
-            self.context.editor_area.read(cx).unsaved_file_names()
+            self.context.editor_area.read(cx).unsaved_file_names(cx)
         } else {
             Vec::new()
         };
@@ -160,11 +198,16 @@ async fn save_unsaved(workspace: &WeakEntity<Workspace>, cx: &mut AsyncWindowCon
     });
     match save {
         Ok(save) => save.await,
-        Err(error) => {
-            log::debug!("workspace dropped while saving all files: {error:#}");
-            false
-        }
+        Err(_) => false,
     }
+}
+
+fn may_close_window(workspace: &WeakEntity<Workspace>, window: &mut Window, cx: &mut App) -> bool {
+    workspace
+        .update(cx, |workspace, cx| {
+            workspace.allows_window_close(window, cx)
+        })
+        .unwrap_or(true)
 }
 
 fn unsaved_message(names: &[SharedString]) -> String {
