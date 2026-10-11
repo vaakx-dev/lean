@@ -7,8 +7,8 @@ use gpui_kit::*;
 
 use super::{ChangeGroup, paths_of};
 use crate::plugins::git::source_control::SourceControl;
-use crate::plugins::git::source_control::row_actions::{hover_actions, icon_button};
-use crate::plugins::git::source_control::rows::{FolderRow, chevron, clickable_row, indent};
+use crate::plugins::git::source_control::rows::{FolderRow, clickable_row, hover_actions, indent};
+use crate::ui::{chevron, icon_button};
 
 impl SourceControl {
     pub(in crate::plugins::git::source_control) fn render_folder_row(

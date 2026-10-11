@@ -3,6 +3,7 @@ use std::mem;
 use gpui_kit::SharedString;
 
 use super::ansi::{incomplete_escape_start, strip_ansi};
+use super::truncated;
 
 pub(super) struct StreamText {
     max_lines: usize,
@@ -75,12 +76,6 @@ impl StreamText {
         if line_count <= self.max_lines {
             return self.plain.trim_end_matches('\n').to_string().into();
         }
-        let kept: Vec<&str> = self.plain.lines().collect();
-        format!(
-            "{}\n… {} more lines",
-            kept.join("\n"),
-            line_count - self.max_lines
-        )
-        .into()
+        truncated(self.plain.lines(), line_count - self.max_lines)
     }
 }

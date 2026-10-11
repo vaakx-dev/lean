@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui_kit::component::setting::{RenderOptions, SettingGroup, SettingItem};
-use gpui_kit::{AnyElement, App, SharedString, Window};
+use gpui_kit::{AnyElement, App, Length, SharedString, Window};
 
 use crate::settings::{Setting, SettingValue};
 
@@ -14,6 +14,7 @@ pub(crate) struct Field {
     pub(super) keywords: Vec<SharedString>,
     pub(super) restart: bool,
     pub(super) stacked: bool,
+    pub(super) control_width: Option<Length>,
     pub(super) enabled: Option<Rc<dyn Fn(&App) -> bool>>,
     pub(super) modified: Rc<dyn Fn(&App) -> bool>,
     pub(super) reset: Rc<dyn Fn(&mut App)>,
@@ -36,6 +37,7 @@ impl Field {
             keywords: Vec::new(),
             restart: false,
             stacked: false,
+            control_width: None,
             enabled: None,
             modified: Rc::new(modified),
             reset: Rc::new(reset),
@@ -76,6 +78,11 @@ impl Field {
 
     pub(crate) fn stacked(mut self) -> Self {
         self.stacked = true;
+        self
+    }
+
+    pub(super) fn control_width(mut self, width: impl Into<Length>) -> Self {
+        self.control_width = Some(width.into());
         self
     }
 

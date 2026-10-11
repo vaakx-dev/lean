@@ -1,27 +1,19 @@
 mod changes;
 mod commit;
-mod commit_box;
-mod diff;
 mod discard;
-mod focus;
 mod git_error;
 mod header;
 mod history;
 mod keymap;
 mod operations;
 mod panel;
-mod placeholder;
-mod row_actions;
 mod rows;
 mod section_row;
-mod setting_observers;
 mod view;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use futures::FutureExt as _;
-use futures::future::Shared;
 use gpui_kit::component::input::TextareaState;
 use gpui_kit::*;
 
@@ -48,9 +40,7 @@ pub(crate) struct SourceControl {
     show_history: bool,
     collapsed_sections: HashSet<Section>,
     collapsed_folders: HashSet<(ChangeGroup, PathBuf)>,
-    committing: bool,
-    git_operation: Shared<Task<bool>>,
-    pending_git_operations: usize,
+    operation: Option<Task<()>>,
     scroll_handle: UniformListScrollHandle,
     _git_subscription: Subscription,
     _settings: Vec<Subscription>,
@@ -88,15 +78,31 @@ impl SourceControl {
             show_history: SHOW_HISTORY.get(cx),
             collapsed_sections: HashSet::new(),
             collapsed_folders: HashSet::new(),
-            committing: false,
-            git_operation: Task::ready(true).shared(),
-            pending_git_operations: 0,
+            operation: None,
             scroll_handle: UniformListScrollHandle::new(),
             _git_subscription: git_subscription,
             _settings: Self::observe_settings(cx),
         };
         source_control.reload(cx);
         source_control
+    }
+
+    fn observe_settings(cx: &mut Context<Self>) -> Vec<Subscription> {
+        vec![
+            VIEW_MODE.observe(cx, |source_control, view_mode, cx| {
+                source_control.set_view_mode(view_mode, cx)
+            }),
+            COMPACT_FOLDERS.observe(cx, |source_control, compact, cx| {
+                source_control.compact_folders = compact;
+                source_control.rebuild_rows();
+                cx.notify();
+            }),
+            SHOW_HISTORY.observe(cx, |source_control, show, cx| {
+                source_control.show_history = show;
+                source_control.rebuild_rows();
+                cx.notify();
+            }),
+        ]
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {

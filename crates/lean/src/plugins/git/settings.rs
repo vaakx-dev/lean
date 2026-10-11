@@ -3,6 +3,7 @@ mod page;
 use gpui_kit::App;
 use serde::{Deserialize, Serialize};
 
+use super::diff::DiffBase;
 use crate::settings::Setting;
 
 pub(crate) use page::settings_page;
@@ -18,8 +19,7 @@ pub(crate) const NOTHING_STAGED: Setting<NothingStaged> =
 pub(crate) const CONFIRM_DISCARD: Setting<bool> = Setting::new("git.confirm_discard", true);
 
 pub(crate) const GUTTER_ENABLED: Setting<bool> = Setting::new("git.gutter.enabled", true);
-pub(crate) const GUTTER_BASE: Setting<GutterBase> =
-    Setting::new("git.gutter.base", GutterBase::Index);
+pub(crate) const GUTTER_BASE: Setting<DiffBase> = Setting::new("git.gutter.base", DiffBase::Index);
 pub(crate) const EXPLORER_DECORATIONS: Setting<ExplorerDecorations> =
     Setting::new("git.explorer_decorations", ExplorerDecorations::Letter);
 pub(crate) const EXPLORER_FOLDER_DOTS: Setting<bool> =
@@ -44,13 +44,6 @@ pub(crate) enum NothingStaged {
     Ask,
     StageAll,
     DoNothing,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum GutterBase {
-    Index,
-    Head,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

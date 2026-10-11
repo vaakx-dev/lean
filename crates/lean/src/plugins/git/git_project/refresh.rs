@@ -3,12 +3,11 @@ use std::time::{Duration, Instant};
 
 use gpui_kit::{AppContext as _, Context, Task};
 
-use super::gutter::GutterScope;
 use super::{GitEvent, GitProject};
 use crate::plugins::git::repo::{
     CommitHistory, GitReadError, GitState, ReadOptions, metadata_watch,
 };
-use crate::plugins::git::settings::{INCLUDE_UNTRACKED, SHOW_HISTORY};
+use crate::plugins::git::settings::{INCLUDE_UNTRACKED, SHOW_HISTORY, history_page_size};
 use crate::watcher::FsChanges;
 
 const DEBOUNCE: Duration = Duration::from_millis(150);
@@ -42,13 +41,11 @@ impl GitProject {
         }
         self.refresh.scheduled = Some(cx.spawn(async move |git, cx| {
             cx.background_executor().timer(DEBOUNCE).await;
-            let refreshed = git.update(cx, |git, cx| {
+            git.update(cx, |git, cx| {
                 git.refresh.scheduled = None;
                 git.refresh(cx);
-            });
-            if let Err(error) = refreshed {
-                log::debug!("git state dropped before a scheduled refresh: {error:#}");
-            }
+            })
+            .ok();
         }));
     }
 
@@ -71,16 +68,19 @@ impl GitProject {
                             .map_err(|error| GitReadError::new(&error, &root))
                     })
                     .await;
-                match git.update(cx, |git, cx| git.finish_read(result, cx)) {
-                    Ok(true) => {}
-                    Ok(false) => break,
-                    Err(error) => {
-                        log::debug!("git state dropped before the status read finished: {error:#}");
-                        break;
-                    }
+                if !git
+                    .update(cx, |git, cx| git.finish_read(result, cx))
+                    .unwrap_or(false)
+                {
+                    break;
                 }
             }
         });
+    }
+
+    pub(crate) fn load_more_history(&mut self, cx: &mut Context<Self>) {
+        self.history_limit += history_page_size(cx);
+        self.refresh(cx);
     }
 
     pub(super) fn files_changed(&mut self, changes: &FsChanges, cx: &mut Context<Self>) {
@@ -132,7 +132,7 @@ impl GitProject {
             self.watch_git_dirs(cx);
         }
         self.refresh_diff_views(cx);
-        self.schedule_gutter(GutterScope::All, cx);
+        self.refresh_gutter(cx);
         let queued = std::mem::take(&mut self.refresh.queued);
         self.refresh.running = queued;
         queued

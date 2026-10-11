@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 use gpui_kit::{App, Global};
 use serde::{Deserialize, Serialize};
 
-use super::read_state;
-use crate::storage::{QueuedWriter, state_file};
+use crate::storage::{QueuedWriter, read_state, state_file};
 
 const FILE_NAME: &str = "sessions.json";
 
@@ -46,22 +45,6 @@ fn loaded(cx: &mut App) -> &Sessions {
     if !cx.has_global::<Sessions>() {
         let sessions = read_state(FILE_NAME).unwrap_or_default();
         cx.set_global(Sessions(sessions));
-        cx.on_app_quit(|cx| {
-            flush(cx);
-            async {}
-        })
-        .detach();
     }
     cx.global::<Sessions>()
-}
-
-fn flush(cx: &App) {
-    if WRITER.is_idle() {
-        return;
-    }
-    if let Some(sessions) = cx.try_global::<Sessions>()
-        && let Some(file) = state_file(FILE_NAME)
-    {
-        WRITER.save_now(&file, &sessions.0);
-    }
 }

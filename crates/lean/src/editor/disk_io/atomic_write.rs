@@ -1,8 +1,9 @@
-use std::fs::{self, Metadata, OpenOptions};
-use std::io::{self, Write as _};
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use super::DiskStamp;
+use crate::storage::write_atomic;
 
 pub(in crate::editor) fn write_atomically(
     path: &Path,
@@ -13,17 +14,13 @@ pub(in crate::editor) fn write_atomically(
         fs::create_dir_all(folder)?;
     }
     let target = resolve_symlink(path);
-    let original = fs::metadata(&target).ok();
-    if original
-        .as_ref()
-        .is_some_and(|metadata| metadata.permissions().readonly())
-    {
+    if fs::metadata(&target).is_ok_and(|metadata| metadata.permissions().readonly()) {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "the file is read-only",
         ));
     }
-    replace_file(&target, bytes, original.as_ref()).map_err(refuse_in_place)?;
+    write_atomic(&target, bytes).map_err(refuse_in_place)?;
     fs::metadata(&target).map(|metadata| DiskStamp::of(&metadata))
 }
 
@@ -50,39 +47,4 @@ fn resolve_symlink(path: &Path) -> PathBuf {
         log::debug!("failed to resolve {}: {error}", path.display());
         path.to_path_buf()
     })
-}
-
-fn replace_file(target: &Path, bytes: &[u8], original: Option<&Metadata>) -> io::Result<()> {
-    let folder = target
-        .parent()
-        .ok_or_else(|| io::Error::other("the file has no parent folder"))?;
-    let temporary = folder.join(temporary_name(target));
-    let written =
-        write_temporary(&temporary, bytes, original).and_then(|()| fs::rename(&temporary, target));
-    if written.is_err()
-        && let Err(error) = fs::remove_file(&temporary)
-    {
-        log::debug!("failed to remove {}: {error}", temporary.display());
-    }
-    written
-}
-
-fn write_temporary(temporary: &Path, bytes: &[u8], original: Option<&Metadata>) -> io::Result<()> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temporary)?;
-    file.write_all(bytes)?;
-    if let Some(original) = original {
-        file.set_permissions(original.permissions())?;
-    }
-    file.sync_all()
-}
-
-fn temporary_name(target: &Path) -> String {
-    let name = target
-        .file_name()
-        .map(|name| name.to_string_lossy())
-        .unwrap_or_default();
-    format!(".{name}.{}.lean-save", uuid::Uuid::new_v4().simple())
 }

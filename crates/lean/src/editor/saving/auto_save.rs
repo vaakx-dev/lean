@@ -24,15 +24,13 @@ impl EditorArea {
         let id = self.files[index].id;
         self.files[index].disk._auto_save = cx.spawn_in(window, async move |area, cx| {
             cx.background_executor().timer(delay).await;
-            let update = area.update_in(cx, |area, window, cx| {
+            area.update_in(cx, |area, window, cx| {
                 if AUTO_SAVE.get(cx) == AutoSave::AfterDelay {
                     let format = SaveFormat::from_settings(cx).without_text_changes();
                     area.auto_save(id, format, window, cx);
                 }
-            });
-            if let Err(error) = update {
-                log::debug!("editor area dropped before an auto save: {error:#}");
-            }
+            })
+            .ok();
         });
     }
 
@@ -44,16 +42,6 @@ impl EditorArea {
     ) {
         if AUTO_SAVE.get(cx) == AutoSave::OnFocusChange {
             self.auto_save(id, SaveFormat::from_settings(cx), window, cx);
-        }
-    }
-
-    pub(super) fn auto_save_active_on_focus_change(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(id) = self.active_file().map(|file| file.id) {
-            self.auto_save_on_focus_change(id, window, cx);
         }
     }
 
@@ -87,11 +75,15 @@ impl EditorArea {
             return;
         };
         if can_auto_save(&self.files[index]) {
-            drop(self.write(index, true, format, window, cx));
+            drop(self.write(index, format, window, cx));
         }
     }
 }
 
 fn can_auto_save(file: &OpenFile) -> bool {
-    file.is_file() && file.dirty && !file.deleted && !file.disk.conflict && !file.disk.is_saving()
+    file.is_file()
+        && file.dirty
+        && !file.deleted
+        && !file.disk.conflict
+        && file.disk.saving.is_none()
 }

@@ -102,7 +102,7 @@ impl Refresh {
         if chunks.has_missing(visible) {
             return Some(Duration::ZERO);
         }
-        if !chunks.needs_build(wanted, self.version) {
+        if chunks.outdated(wanted, self.version).is_empty() {
             return None;
         }
         Some(if self.edited {
@@ -132,10 +132,9 @@ impl Minimap {
                 return;
             };
             let built = cx.background_spawn(async move { job.run() }).await;
-            let update = minimap.update(cx, |minimap, cx| minimap.show_chunks(built, cx));
-            if let Err(error) = update {
-                log::debug!("minimap released before its refresh finished: {error:#}");
-            }
+            minimap
+                .update(cx, |minimap, cx| minimap.show_chunks(built, cx))
+                .ok();
         });
     }
 

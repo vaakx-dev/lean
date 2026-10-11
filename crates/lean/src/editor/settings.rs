@@ -1,4 +1,4 @@
-mod font;
+pub(crate) mod font;
 mod page;
 
 use gpui_kit::App;

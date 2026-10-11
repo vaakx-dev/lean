@@ -6,7 +6,6 @@ mod execution;
 mod kernel;
 mod keymap;
 mod output;
-mod rows;
 mod saved;
 pub(crate) mod settings;
 mod settings_sync;

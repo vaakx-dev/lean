@@ -7,7 +7,7 @@ use gpui_kit::SharedString;
 
 use super::FileStatus;
 use super::history::{CommitHistory, CommitSummary, read_history};
-use super::repository::{git_dirs, workdir};
+use super::repository::{canonical, git_dirs, workdir};
 use super::statuses::read_statuses;
 
 #[derive(PartialEq, Eq)]
@@ -109,7 +109,7 @@ fn unborn_branch_name(repository: &git2::Repository) -> Option<String> {
 }
 
 fn project_scope(root: &Path, workdir: &Path) -> Option<PathBuf> {
-    let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let root = canonical(root);
     let scope = root.strip_prefix(workdir).ok()?;
     (!scope.as_os_str().is_empty()).then(|| scope.to_path_buf())
 }

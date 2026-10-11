@@ -35,10 +35,9 @@ impl TerminalPanel {
             if !matches!(answer.await, Ok(CLOSE_ANSWER)) {
                 return;
             }
-            let closed = panel.update_in(cx, |panel, window, cx| panel.remove(&view, window, cx));
-            if let Err(error) = closed {
-                log::debug!("terminal panel dropped before closing a terminal: {error:#}");
-            }
+            panel
+                .update_in(cx, |panel, window, cx| panel.remove(&view, window, cx))
+                .ok();
         })
         .detach();
     }

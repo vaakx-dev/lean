@@ -67,9 +67,9 @@ impl FileView for Notebook {
         let notebook = cx.weak_entity();
         Some(self.content(cx).map(|content| {
             Snapshot::new(move || line_ending.encode(content)).on_saved(move |cx| {
-                if let Err(error) = notebook.update(cx, |notebook, _| notebook.saved = saved) {
-                    log::debug!("notebook dropped after saving: {error:#}");
-                }
+                notebook
+                    .update(cx, |notebook, _| notebook.saved = saved)
+                    .ok();
             })
         }))
     }

@@ -1,11 +1,12 @@
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::Button;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::{Icon, Selectable as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{Selectable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::SearchPanel;
 use crate::plugins::search::query::SearchOptions;
+use crate::ui::icon_button;
 
 impl SearchPanel {
     pub(super) fn render_query_bar(&self, cx: &Context<Self>) -> Div {
@@ -85,12 +86,8 @@ fn toggle_button(
     tooltip: &'static str,
     selected: bool,
 ) -> Button {
-    Button::new(id)
-        .ghost()
-        .xsmall()
+    icon_button(id, icon, tooltip)
         .tab_stop(false)
-        .icon(Icon::empty().path(icon))
-        .tooltip(tooltip)
         .selected(selected)
 }
 

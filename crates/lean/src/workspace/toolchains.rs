@@ -4,32 +4,17 @@ use gpui_kit::component::{Sizable as _, WindowExt as _};
 use gpui_kit::*;
 
 use super::Workspace;
-use crate::terminal::{TerminalLaunch, shell_kind};
 use crate::toolchain::ToolchainsEvent;
 
 struct InterpreterChanged;
 
 impl Workspace {
-    pub(super) fn terminal_launch(&self, cx: &App) -> TerminalLaunch {
-        self.context
-            .toolchains
-            .read(cx)
-            .terminal_launch(shell_kind(cx), cx)
-    }
-
-    pub(super) fn refresh_toolchains_after_activation(&self, cx: &mut Context<Self>) {
-        self.context
-            .toolchains
-            .update(cx, |toolchains, cx| toolchains.refresh_if_automatic(cx));
-    }
-
     pub(super) fn handle_toolchains_event(
         &mut self,
         event: &ToolchainsEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.sync_terminal_launch(cx);
         if let ToolchainsEvent::Selected(label) = event
             && self.terminal.is_some()
         {

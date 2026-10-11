@@ -15,7 +15,7 @@ impl Toolchains {
         cx: &mut Context<Self>,
     ) {
         store::save(&self.project_root, language, prefix.clone(), cx);
-        self.track_selection(true, cx, |toolchains| {
+        self.track_selection(cx, |toolchains| {
             toolchains.choices.insert(language.to_owned(), prefix);
         });
         cx.notify();
@@ -26,7 +26,7 @@ impl Toolchains {
         default: DefaultInterpreter,
         cx: &mut Context<Self>,
     ) {
-        self.track_selection(true, cx, |toolchains| {
+        self.track_selection(cx, |toolchains| {
             toolchains.default_interpreter = default;
         });
         cx.notify();
@@ -34,19 +34,19 @@ impl Toolchains {
 
     pub(super) fn track_selection(
         &mut self,
-        announce: bool,
         cx: &mut Context<Self>,
         change: impl FnOnce(&mut Self),
     ) {
+        if !self.discovered {
+            change(self);
+            return;
+        }
         let before: HashMap<&'static str, Option<PathBuf>> = self
             .languages()
             .into_iter()
             .map(|language| (language, self.active_prefix(language)))
             .collect();
         change(self);
-        if !announce {
-            return;
-        }
         for language in self.languages() {
             let previous = before.get(language).cloned().flatten();
             if self.active_prefix(language) != previous {

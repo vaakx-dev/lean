@@ -5,13 +5,14 @@ use gpui_kit::component::{ActiveTheme as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::ChangeGroup;
+use super::{ChangeGroup, ChangedFile};
 use crate::files::file_icon;
 use crate::plugins::PanelEvent;
+use crate::plugins::git::diff::DiffBase;
 use crate::plugins::git::repo::FileStatus;
 use crate::plugins::git::source_control::SourceControl;
-use crate::plugins::git::source_control::row_actions::{hover_actions, icon_button};
-use crate::plugins::git::source_control::rows::{FileRow, clickable_row, indent};
+use crate::plugins::git::source_control::rows::{FileRow, clickable_row, hover_actions, indent};
+use crate::ui::icon_button;
 
 impl SourceControl {
     pub(in crate::plugins::git::source_control) fn render_file_row(
@@ -105,5 +106,21 @@ impl SourceControl {
             }
         }
         actions
+    }
+
+    fn open_diff(
+        &mut self,
+        file: &ChangedFile,
+        group: ChangeGroup,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let base = match group {
+            ChangeGroup::Staged => DiffBase::Staged,
+            ChangeGroup::Unstaged => DiffBase::Index,
+        };
+        let path = file.path.clone();
+        self.git
+            .update(cx, |git, cx| git.open_diff(path, base, window, cx));
     }
 }

@@ -1,18 +1,14 @@
-use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use gpui_kit::{App, Global, SharedString, Task};
-use notify::RecommendedWatcher;
 use serde_json::{Map, Value};
 
-use super::save;
+use super::{WRITER, settings_file};
 
 pub(crate) struct Settings {
     pub(super) values: Map<String, Value>,
     pub(super) load_error: Option<SharedString>,
-    pub(super) save_pending: Cell<bool>,
-    save_task: Task<()>,
-    pub(super) watcher: Option<(RecommendedWatcher, Task<()>)>,
+    pub(super) watcher: Option<Task<()>>,
 }
 
 impl Global for Settings {}
@@ -22,8 +18,6 @@ impl Settings {
         Self {
             values,
             load_error,
-            save_pending: Cell::new(false),
-            save_task: Task::ready(()),
             watcher: None,
         }
     }
@@ -40,14 +34,14 @@ pub(super) fn write(key: &str, value: Option<Value>, cx: &mut App) {
     if settings.values.get(key) == value.as_ref() {
         return;
     }
-    let save_task = save::schedule(cx);
     let settings = cx.global_mut::<Settings>();
     match value {
         Some(value) => settings.values.insert(key.to_owned(), value),
         None => settings.values.remove(key),
     };
-    settings.save_pending.set(true);
-    settings.save_task = save_task;
+    if let Some(file) = settings_file() {
+        WRITER.save(file, snapshot(cx), cx);
+    }
 }
 
 pub(super) fn replace_all(values: Map<String, Value>, cx: &mut App) {

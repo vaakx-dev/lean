@@ -1,22 +1,22 @@
 mod document;
-mod load;
 mod render;
 mod row;
 mod side;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::*;
 
 use super::base::DiffBase;
-use crate::files::file_name;
+use super::blobs::{read_base, read_index, read_working};
+use crate::files::{Language, file_name};
+use crate::plugins::git::repo::RepoFile;
 use crate::plugins::git::settings::{DIFF_CONTEXT_LINES, diff_context_lines};
 use crate::plugins::{FileView, FileViewEvent};
 use crate::workspace::status_item;
 use document::DiffDocument;
-use load::load_document;
 
 pub(crate) struct DiffView {
     repo_root: PathBuf,
@@ -71,9 +71,7 @@ impl DiffView {
             .background_spawn(async move { load_document(&repo_root, &path, base, context_lines) });
         self._load = cx.spawn(async move |view, cx| {
             let result = load.await;
-            if let Err(error) = view.update(cx, |view, cx| view.show(result, cx)) {
-                log::debug!("diff view dropped while loading: {error:#}");
-            }
+            view.update(cx, |view, cx| view.show(result, cx)).ok();
         });
     }
 
@@ -91,6 +89,21 @@ impl DiffView {
         cx.emit(FileViewEvent::StatusChanged);
         cx.notify();
     }
+}
+
+fn load_document(
+    repo_root: &Path,
+    path: &Path,
+    base: DiffBase,
+    context_lines: u32,
+) -> Result<DiffDocument> {
+    let file = RepoFile::open(repo_root, path)?;
+    let old = read_base(&file, base)?;
+    let new = match base {
+        DiffBase::Index => read_working(path)?,
+        DiffBase::Staged => read_index(&file)?,
+    };
+    DiffDocument::build(old, new, Language::for_path(path).id(), context_lines)
 }
 
 impl FileView for DiffView {

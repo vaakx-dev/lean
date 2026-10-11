@@ -1,22 +1,32 @@
 mod connection;
 mod replies;
-mod runtime;
 mod stderr;
 
 use std::collections::HashMap;
+use std::io;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use jupyter_protocol::{ExecuteRequest, JupyterMessage};
 use serde_json::Value;
+use tokio::runtime::{Builder, Runtime};
 use tokio::task::JoinHandle;
 
 #[cfg(windows)]
 const DEFAULT_PYTHON: &str = "python";
 #[cfg(not(windows))]
 const DEFAULT_PYTHON: &str = "python3";
+
+static RUNTIME: LazyLock<io::Result<Runtime>> = LazyLock::new(|| {
+    Builder::new_multi_thread()
+        .worker_threads(1)
+        .thread_name("lean-kernels")
+        .enable_all()
+        .build()
+});
 
 pub(super) struct KernelSpec {
     pub(super) folder: PathBuf,
@@ -58,7 +68,9 @@ pub(super) struct Kernel {
 
 impl Kernel {
     pub(super) fn start(spec: KernelSpec) -> Result<(Kernel, UnboundedReceiver<KernelEvent>)> {
-        let runtime = runtime::runtime()?;
+        let runtime = RUNTIME
+            .as_ref()
+            .map_err(|error| anyhow!("failed to start the kernel runtime: {error}"))?;
         let (commands, command_receiver) = unbounded();
         let (event_sender, events) = unbounded();
         let task = runtime.spawn(connection::run(spec, command_receiver, event_sender));

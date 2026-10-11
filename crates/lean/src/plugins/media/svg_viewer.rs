@@ -1,8 +1,6 @@
 mod mode;
 mod preview;
-mod rasterize;
 mod refresh;
-mod source;
 mod view;
 
 use std::path::Path;
@@ -13,14 +11,13 @@ use gpui_kit::component::Rope;
 use gpui_kit::*;
 
 use super::formats::is_svg;
-use super::settings::SVG_DEFAULT_MODE;
+use super::settings::{SVG_DEFAULT_MODE, SvgMode};
 use crate::editor::TEXT_VIEWER;
 use crate::files::settings::SaveFormat;
 use crate::plugins::{
     AnyFileView, FileView, FileViewEvent, FileViewer, GutterMarker, OpenRequest, Snapshot,
 };
 use crate::settings::Settings;
-use mode::Mode;
 use preview::SvgPreview;
 
 const REFRESH_DELAY: Duration = Duration::from_millis(150);
@@ -42,7 +39,7 @@ pub(super) struct SvgViewer {
     code: AnyFileView,
     preview: SvgPreview,
     preview_stale: bool,
-    mode: Mode,
+    mode: SvgMode,
     focus_handle: FocusHandle,
     _refresh: Task<()>,
     _code_events: Subscription,
@@ -59,10 +56,9 @@ impl SvgViewer {
             cx,
             Box::new(move |event: &FileViewEvent, cx: &mut App| {
                 let edited = matches!(event, FileViewEvent::Edited);
-                let update = viewer.update(cx, |viewer, cx| viewer.handle_code_event(edited, cx));
-                if let Err(error) = update {
-                    log::debug!("svg viewer released before handling an editor event: {error:#}");
-                }
+                viewer
+                    .update(cx, |viewer, cx| viewer.handle_code_event(edited, cx))
+                    .ok();
             }),
         );
         let release = cx.on_release(|viewer, cx| viewer.preview.release(cx));
@@ -71,7 +67,7 @@ impl SvgViewer {
             code,
             preview: SvgPreview::default(),
             preview_stale: true,
-            mode: Mode::from(SVG_DEFAULT_MODE.get(cx)),
+            mode: SVG_DEFAULT_MODE.get(cx),
             focus_handle: cx.focus_handle(),
             _refresh: Task::ready(()),
             _code_events: code_events,
@@ -99,7 +95,7 @@ impl SvgViewer {
         }
     }
 
-    fn set_mode(&mut self, mode: Mode, window: &mut Window, cx: &mut Context<Self>) {
+    fn set_mode(&mut self, mode: SvgMode, window: &mut Window, cx: &mut Context<Self>) {
         self.mode = mode;
         self.refresh_if_visible(Duration::ZERO, cx);
         let focus_handle = self.focus_handle(cx);
@@ -152,7 +148,7 @@ impl FileView for SvgViewer {
 
     fn go_to(&mut self, line: usize, column: usize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.mode.shows_code() {
-            self.set_mode(Mode::Split, window, cx);
+            self.set_mode(SvgMode::Split, window, cx);
         }
         self.code.go_to(line, column, window, cx);
     }
@@ -169,8 +165,8 @@ impl FileView for SvgViewer {
 impl Focusable for SvgViewer {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         match self.mode {
-            Mode::Preview => self.focus_handle.clone(),
-            Mode::Code | Mode::Split => self.code.focus_handle(cx),
+            SvgMode::Preview => self.focus_handle.clone(),
+            SvgMode::Code | SvgMode::Split => self.code.focus_handle(cx),
         }
     }
 }

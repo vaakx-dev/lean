@@ -1,6 +1,10 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum DiffBase {
     Index,
+    #[serde(rename = "head")]
     Staged,
 }
 

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use gpui_kit::Context;
+use gpui_kit::{Context, Window};
 
 use super::{Explorer, VisibleEntry};
 use crate::project::DirectoryEntry;
@@ -31,7 +31,12 @@ impl Explorer {
         row
     }
 
-    pub(super) fn unfold_single_child(&mut self, folder: &Path, cx: &mut Context<Self>) {
+    pub(super) fn unfold_single_child(
+        &mut self,
+        folder: &Path,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let nesting = folder
             .components()
             .count()
@@ -43,7 +48,7 @@ impl Explorer {
             return;
         };
         if !self.expanded.contains(&child) {
-            self.expand_folder(child, cx);
+            self.expand_folder(child, window, cx);
         }
     }
 

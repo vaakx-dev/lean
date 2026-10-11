@@ -1,11 +1,12 @@
 use std::ops::Range;
 
-use gpui_kit::component::{Icon, Theme, h_flex};
+use gpui_kit::component::Theme;
 use gpui_kit::*;
 
 use super::SearchPanel;
+use crate::ui::clickable_list_row;
 
-pub(super) const ROW_HEIGHT: Pixels = px(22.);
+const ROW_HEIGHT: Pixels = px(22.);
 
 #[derive(Clone, Copy)]
 pub(super) enum Row {
@@ -66,28 +67,5 @@ impl SearchPanel {
 }
 
 pub(super) fn clickable_row(index: usize, theme: &Theme) -> Stateful<Div> {
-    h_flex()
-        .id(("search-row", index))
-        .w_full()
-        .h(ROW_HEIGHT)
-        .flex_shrink_0()
-        .gap_1p5()
-        .pr_1()
-        .overflow_hidden()
-        .rounded(theme.radius)
-        .cursor_pointer()
-        .hover(|style| style.bg(theme.list_hover))
-}
-
-pub(super) fn chevron(expanded: bool, theme: &Theme) -> Icon {
-    let path = if expanded {
-        "icons/chevron-down.svg"
-    } else {
-        "icons/chevron-right.svg"
-    };
-    Icon::empty()
-        .path(path)
-        .size_4()
-        .flex_shrink_0()
-        .text_color(theme.muted_foreground)
+    clickable_list_row(("search-row", index), ROW_HEIGHT, theme)
 }

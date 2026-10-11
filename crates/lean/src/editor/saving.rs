@@ -3,7 +3,6 @@ mod conflict;
 mod format;
 mod hot_exit;
 mod services;
-mod snapshot;
 mod write;
 
 use gpui_kit::*;
@@ -13,6 +12,7 @@ use super::disk_state::{SaveInFlight, SaveOutcome};
 use crate::files::settings::SaveFormat;
 
 pub(super) use format::format_for_save;
+pub(super) use hot_exit::{BackupFile, HotExit};
 
 impl EditorArea {
     pub(crate) fn save_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -29,7 +29,7 @@ impl EditorArea {
         let ids: Vec<u64> = self
             .files
             .iter()
-            .filter(|file| file.dirty || file.disk.is_saving())
+            .filter(|file| file.dirty || file.disk.saving.is_some())
             .map(|file| file.id)
             .collect();
         cx.spawn_in(window, async move |area, cx| {
@@ -38,7 +38,7 @@ impl EditorArea {
                     area.index_of_id(id)
                         .map(|index| area.save(index, window, cx))
                 });
-                if !settle(save, "saving all files").await {
+                if !settle(save).await {
                     return false;
                 }
             }
@@ -68,7 +68,7 @@ impl EditorArea {
         if file.disk.conflict {
             return self.resolve_conflict(index, window, cx);
         }
-        let write = self.write(index, true, SaveFormat::from_settings(cx), window, cx);
+        let write = self.write(index, SaveFormat::from_settings(cx), window, cx);
         self.resolve_after_write(id, write, window, cx)
     }
 
@@ -87,7 +87,7 @@ impl EditorArea {
                 area.index_of_id(id)
                     .map(|index| area.save(index, window, cx))
             });
-            settle(save, "saving a file again").await
+            settle(save).await
         })
     }
 
@@ -106,19 +106,16 @@ impl EditorArea {
                     area.index_of_id(id)
                         .map(|index| area.resolve_conflict(index, window, cx))
                 });
-                settle(resolve, "resolving a save conflict").await
+                settle(resolve).await
             }
         })
     }
 }
 
-async fn settle(task: anyhow::Result<Option<Task<bool>>>, action: &str) -> bool {
+async fn settle(task: anyhow::Result<Option<Task<bool>>>) -> bool {
     match task {
         Ok(Some(task)) => task.await,
         Ok(None) => true,
-        Err(error) => {
-            log::debug!("editor area dropped while {action}: {error:#}");
-            false
-        }
+        Err(_) => false,
     }
 }

@@ -23,12 +23,6 @@ impl Default for MetadataWatch {
     }
 }
 
-impl MetadataWatch {
-    pub(crate) fn watches_same(&self, other: &MetadataWatch) -> bool {
-        self.dirs == other.dirs && self.targets == other.targets
-    }
-}
-
 pub(super) enum MetadataPath {
     Worktree,
     Relevant,
@@ -36,16 +30,17 @@ pub(super) enum MetadataPath {
     Internal,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(super) struct SharedMetadata(Arc<RwLock<MetadataWatch>>);
 
 impl SharedMetadata {
-    pub(super) fn new(watch: MetadataWatch) -> Self {
-        Self(Arc::new(RwLock::new(watch)))
-    }
-
-    pub(super) fn replace(&self, watch: MetadataWatch) {
-        *self.0.write().unwrap_or_else(PoisonError::into_inner) = watch;
+    pub(super) fn replace(&self, watch: MetadataWatch) -> bool {
+        let mut current = self.0.write().unwrap_or_else(PoisonError::into_inner);
+        if current.dirs == watch.dirs && current.targets == watch.targets {
+            return false;
+        }
+        *current = watch;
+        true
     }
 
     pub(super) fn targets(

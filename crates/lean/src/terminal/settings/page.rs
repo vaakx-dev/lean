@@ -5,8 +5,9 @@ use gpui_kit::component::setting::{SettingGroup, SettingPage};
 use super::environment_field::environment_field;
 use super::{
     BELL, BellMode, CONFIRM_CLOSE_RUNNING, COPY_ON_SELECT, CURSOR_BLINK, CURSOR_SHAPE,
-    ClipboardAccess, CursorShapeChoice, FONT_FAMILY, FONT_SIZE, LINE_HEIGHT, OSC52, PANEL_HEIGHT,
-    SCROLLBACK, SHELL_ARGS, SHELL_LOGIN, SHELL_PROGRAM, WORKING_DIRECTORY, WorkingDirectory,
+    ClipboardAccess, CursorShapeChoice, FONT_FAMILY, FONT_SIZE, LINE_HEIGHT, MAX_FONT_SIZE,
+    MAX_LINE_HEIGHT, MIN_FONT_SIZE, MIN_LINE_HEIGHT, OSC52, PANEL_HEIGHT, SCROLLBACK, SHELL_ARGS,
+    SHELL_LOGIN, SHELL_PROGRAM, WORKING_DIRECTORY, WorkingDirectory,
 };
 use crate::editor::settings::font_size as editor_font_size;
 use crate::settings::ui::fields::{
@@ -81,13 +82,17 @@ fn appearance_group(cx: &App) -> SettingGroup {
                 &FONT_SIZE,
                 "Font size",
                 "Empty uses the editor font size.",
-                Number::range(6., 72.).unit("px").placeholder(editor_size),
+                Number::range(MIN_FONT_SIZE.into(), MAX_FONT_SIZE.into())
+                    .unit("px")
+                    .placeholder(editor_size),
             ),
             number(
                 &LINE_HEIGHT,
                 "Line height",
                 "Multiple of the font size.",
-                Number::range(1., 2.).step(0.1).unit("×"),
+                Number::range(MIN_LINE_HEIGHT.into(), MAX_LINE_HEIGHT.into())
+                    .step(0.1)
+                    .unit("×"),
             )
             .keywords(["spacing"]),
             select(

@@ -2,11 +2,8 @@ use std::path::Path;
 
 use gpui_kit::{App, Global};
 
-use super::file_action::FileAction;
-use super::file_viewer::FileViewer;
+use super::contributions::{FileAction, FileViewer, StartService, StatusItem};
 use super::panel::Panel;
-use super::service::StartService;
-use super::status_item::StatusItem;
 
 #[derive(Default)]
 pub(in crate::plugins) struct Registry {

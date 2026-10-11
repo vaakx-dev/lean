@@ -66,7 +66,7 @@ impl Cell {
         }
     }
 
-    pub(super) fn rebuild_outputs(&mut self, cx: &mut Context<Notebook>) {
+    pub(super) fn rebuild_outputs(&mut self, cx: &App) {
         self.outputs = self
             .outputs
             .iter()
@@ -88,7 +88,7 @@ impl Cell {
         };
     }
 
-    pub(super) fn push_output(&mut self, json: Value, cx: &mut Context<Notebook>) {
+    pub(super) fn push_output(&mut self, json: Value, cx: &App) {
         if self.clear_pending {
             self.outputs.clear();
             self.clear_pending = false;

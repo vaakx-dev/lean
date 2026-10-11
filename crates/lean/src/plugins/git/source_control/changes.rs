@@ -88,13 +88,6 @@ impl Changes {
             .cloned()
             .collect()
     }
-
-    pub(super) fn paths(&self, group: ChangeGroup) -> Vec<PathBuf> {
-        self.files(group)
-            .iter()
-            .map(|file| file.path.clone())
-            .collect()
-    }
 }
 
 pub(super) fn paths_of(files: &[Rc<ChangedFile>]) -> Vec<PathBuf> {

@@ -10,9 +10,11 @@ impl EditorArea {
     pub(in crate::editor) fn mark_conflict(
         &mut self,
         index: usize,
+        offer_reload: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let area = cx.weak_entity();
         let Some(file) = self.files.get_mut(index) else {
             return;
         };
@@ -20,7 +22,12 @@ impl EditorArea {
         file.disk.written = None;
         if !file.disk.conflict {
             file.disk.conflict = true;
-            window.push_notification(notices::changed_on_disk(&file.name, file.id), cx);
+            let notice = if offer_reload {
+                notices::reload_offer(area, &file.name, file.id)
+            } else {
+                notices::changed_on_disk(&file.name, file.id)
+            };
+            window.push_notification(notice, cx);
         }
         cx.notify();
     }
@@ -33,27 +40,13 @@ impl EditorArea {
         cx: &mut Context<Self>,
     ) {
         if EXTERNAL_CHANGES.get(cx) == ExternalChanges::Ask {
-            self.offer_reload(index, window, cx);
+            self.mark_conflict(index, true, window, cx);
             return;
         }
         if self.reload(index, disk, window, cx) && EXTERNAL_CHANGE_NOTICE.get(cx) {
             let file = &self.files[index];
             window.push_notification(notices::reloaded(&file.name, file.id), cx);
         }
-    }
-
-    fn offer_reload(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let area = cx.weak_entity();
-        let Some(file) = self.files.get_mut(index) else {
-            return;
-        };
-        file.deleted = false;
-        file.disk.written = None;
-        if !file.disk.conflict {
-            file.disk.conflict = true;
-            window.push_notification(notices::reload_offer(area, &file.name, file.id), cx);
-        }
-        cx.notify();
     }
 
     pub(super) fn mark_deleted(&mut self, index: usize, cx: &mut Context<Self>) {

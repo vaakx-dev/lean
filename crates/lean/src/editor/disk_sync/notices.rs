@@ -16,26 +16,24 @@ pub(super) fn reload_offer(
     name: &SharedString,
     id: u64,
 ) -> Notification {
-    Notification::warning(format!("{name} changed on disk."))
-        .id1::<ExternalChangeNotice>(id)
-        .action(move |_, _, cx| {
-            let notification = cx.entity().downgrade();
-            let area = area.clone();
-            Button::new("reload-file")
-                .primary()
-                .label("Reload")
-                .on_click(move |_, window, cx| {
-                    if let Err(error) = area.update(cx, |area, cx| area.revert_file(id, window, cx))
-                    {
-                        log::debug!("editor area dropped before reloading a file: {error:#}");
-                    }
-                    if let Err(error) =
-                        notification.update(cx, |notification, cx| notification.dismiss(window, cx))
-                    {
-                        log::debug!("reload notification already closed: {error:#}");
+    changed_on_disk(name, id).action(move |_, _, cx| {
+        let notification = cx.entity().downgrade();
+        let area = area.clone();
+        Button::new("reload-file")
+            .primary()
+            .label("Reload")
+            .on_click(move |_, window, cx| {
+                area.update(cx, |area, cx| {
+                    if let Some(index) = area.index_of_id(id) {
+                        area.revert(index, window, cx);
                     }
                 })
-        })
+                .ok();
+                notification
+                    .update(cx, |notification, cx| notification.dismiss(window, cx))
+                    .ok();
+            })
+    })
 }
 
 pub(in crate::editor) fn dismiss_disk_notice(id: u64, window: &mut Window, cx: &mut App) {

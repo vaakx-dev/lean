@@ -6,6 +6,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use gpui_kit::SharedString;
 
+use super::repository::head_commit;
 use order::children_before_parents;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -35,17 +36,8 @@ pub(super) fn read_history(
     if limit == 0 {
         return Ok(CommitHistory::default());
     }
-    let head = match repository.head() {
-        Ok(head) => head.peel_to_commit()?,
-        Err(error)
-            if matches!(
-                error.code(),
-                git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
-            ) =>
-        {
-            return Ok(CommitHistory::default());
-        }
-        Err(error) => return Err(error.into()),
+    let Some(head) = head_commit(repository)? else {
+        return Ok(CommitHistory::default());
     };
     if let Some(previous) =
         previous.filter(|previous| previous.head == Some(head.id()) && previous.limit == limit)

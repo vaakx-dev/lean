@@ -1,17 +1,20 @@
 mod ansi;
-mod image;
 mod stream;
 mod view;
 
-use gpui_kit::{Context, SharedString};
+use std::sync::Arc;
+
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+use gpui_kit::{App, Image, ImageFormat, SharedString};
 use serde_json::Value;
 
-use super::Notebook;
 use super::document::join_text;
 use super::settings::OUTPUT_MAX_LINES;
 use ansi::strip_ansi;
-use image::ImageOutput;
 use stream::StreamText;
+
+const IMAGE_FORMATS: [ImageFormat; 2] = [ImageFormat::Png, ImageFormat::Jpeg];
 
 pub(crate) struct Output {
     pub(crate) json: Value,
@@ -28,19 +31,16 @@ enum OutputContent {
         title: SharedString,
         traceback: SharedString,
     },
-    Image {
-        image: ImageOutput,
-        fallback: Box<OutputContent>,
-    },
+    Image(Arc<Image>),
     Markdown(SharedString),
     Html(SharedString),
     Unsupported(SharedString),
 }
 
 impl Output {
-    pub(crate) fn new(json: Value, cx: &mut Context<Notebook>) -> Output {
+    pub(crate) fn new(json: Value, cx: &App) -> Output {
         let max_lines = OUTPUT_MAX_LINES.get(cx).max(1) as usize;
-        let content = OutputContent::from_json(&json, max_lines, cx);
+        let content = OutputContent::from_json(&json, max_lines);
         Output { json, content }
     }
 
@@ -76,7 +76,7 @@ fn append_text(json: &mut Value, chunk: &str) {
 }
 
 impl OutputContent {
-    fn from_json(json: &Value, max_lines: usize, cx: &mut Context<Notebook>) -> OutputContent {
+    fn from_json(json: &Value, max_lines: usize) -> OutputContent {
         match json.get("output_type").and_then(Value::as_str) {
             Some("stream") => OutputContent::Stream {
                 text: StreamText::new(
@@ -87,7 +87,7 @@ impl OutputContent {
             },
             Some("error") => error_content(json, max_lines),
             Some("execute_result" | "display_data") => match json.get("data") {
-                Some(data) => image_content(data, max_lines, cx),
+                Some(data) => image_content(data, max_lines),
                 None => OutputContent::Unsupported("Empty output".into()),
             },
             other => OutputContent::Unsupported(
@@ -97,15 +97,27 @@ impl OutputContent {
     }
 }
 
-fn image_content(data: &Value, max_lines: usize, cx: &mut Context<Notebook>) -> OutputContent {
-    let fallback = data_content(data, max_lines);
-    match ImageOutput::load(data, cx) {
-        Some(image) => OutputContent::Image {
-            image,
-            fallback: Box::new(fallback),
-        },
-        None => fallback,
+fn image_content(data: &Value, max_lines: usize) -> OutputContent {
+    match decode_image(data) {
+        Some(image) => OutputContent::Image(image),
+        None => data_content(data, max_lines),
     }
+}
+
+fn decode_image(data: &Value) -> Option<Arc<Image>> {
+    IMAGE_FORMATS.into_iter().find_map(|format| {
+        let encoded: String = join_text(data.get(format.mime_type())?)
+            .chars()
+            .filter(|char| !char.is_whitespace())
+            .collect();
+        match STANDARD.decode(encoded) {
+            Ok(bytes) => Some(Arc::new(Image::from_bytes(format, bytes))),
+            Err(error) => {
+                log::warn!("failed to decode a notebook image: {error}");
+                None
+            }
+        }
+    })
 }
 
 fn data_content(data: &Value, max_lines: usize) -> OutputContent {
@@ -159,11 +171,10 @@ fn limit_lines(text: &str, max_lines: usize) -> SharedString {
     if line_count <= max_lines {
         return text.to_string().into();
     }
-    let kept: Vec<&str> = text.lines().take(max_lines).collect();
-    format!(
-        "{}\n… {} more lines",
-        kept.join("\n"),
-        line_count - max_lines
-    )
-    .into()
+    truncated(text.lines().take(max_lines), line_count - max_lines)
+}
+
+fn truncated<'a>(kept: impl Iterator<Item = &'a str>, hidden: usize) -> SharedString {
+    let kept: Vec<&str> = kept.collect();
+    format!("{}\n… {hidden} more lines", kept.join("\n")).into()
 }

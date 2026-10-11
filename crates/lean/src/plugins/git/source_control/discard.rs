@@ -34,12 +34,11 @@ impl SourceControl {
                 return;
             }
             let paths = paths_of(&files);
-            let update = source_control.update_in(cx, |source_control, window, cx| {
-                source_control.discard(paths, window, cx)
-            });
-            if let Err(error) = update {
-                log::debug!("source control closed before discarding changes: {error:#}");
-            }
+            source_control
+                .update_in(cx, |source_control, window, cx| {
+                    source_control.discard(paths, window, cx)
+                })
+                .ok();
         })
         .detach();
     }

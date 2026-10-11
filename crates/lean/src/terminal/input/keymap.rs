@@ -1,6 +1,5 @@
 use gpui_kit::{App, KeyBinding, actions};
 
-use super::passthrough::{bind_passthrough_keys, watch_passthrough_keys};
 use crate::app::keymap;
 
 actions!(terminal, [CopySelection, Paste]);
@@ -17,6 +16,4 @@ pub(crate) fn bind_keys(cx: &mut App) {
             KeyBinding::new("shift-insert", Paste, Some(KEY_CONTEXT)),
         ],
     );
-    bind_passthrough_keys(cx);
-    watch_passthrough_keys(cx);
 }

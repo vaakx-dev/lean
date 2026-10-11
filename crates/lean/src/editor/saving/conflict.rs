@@ -49,7 +49,7 @@ impl EditorArea {
                     _ => Task::ready(false),
                 })
             });
-            settle(next, "resolving a save conflict").await
+            settle(next).await
         })
     }
 
@@ -59,7 +59,7 @@ impl EditorArea {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Task<bool> {
-        let write = self.write(index, false, SaveFormat::from_settings(cx), window, cx);
+        let write = self.write(index, SaveFormat::from_settings(cx), window, cx);
         cx.spawn(async move |_, _| write.await == SaveOutcome::Saved)
     }
 }

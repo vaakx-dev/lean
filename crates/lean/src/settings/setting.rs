@@ -77,12 +77,9 @@ impl<T: SettingValue> Setting<T> {
         cx: &mut Context<V>,
         mut on_change: impl FnMut(&mut V, T, &mut Context<V>) + 'static,
     ) -> Subscription {
-        let setting = self.clone();
-        let mut current = setting.get(cx);
+        let mut changed = self.changes(cx);
         cx.observe_global::<Settings>(move |view, cx| {
-            let value = setting.get(cx);
-            if value != current {
-                current = value.clone();
+            if let Some(value) = changed(cx) {
                 on_change(view, value, cx);
             }
         })
@@ -93,12 +90,9 @@ impl<T: SettingValue> Setting<T> {
         cx: &mut App,
         mut on_change: impl FnMut(T, &mut App) + 'static,
     ) -> Subscription {
-        let setting = self.clone();
-        let mut current = setting.get(cx);
+        let mut changed = self.changes(cx);
         cx.observe_global::<Settings>(move |cx| {
-            let value = setting.get(cx);
-            if value != current {
-                current = value.clone();
+            if let Some(value) = changed(cx) {
                 on_change(value, cx);
             }
         })
@@ -110,14 +104,24 @@ impl<T: SettingValue> Setting<T> {
         cx: &mut Context<V>,
         mut on_change: impl FnMut(&mut V, T, &mut Window, &mut Context<V>) + 'static,
     ) -> Subscription {
-        let setting = self.clone();
-        let mut current = setting.get(cx);
+        let mut changed = self.changes(cx);
         cx.observe_global_in::<Settings>(window, move |view, window, cx| {
-            let value = setting.get(cx);
-            if value != current {
-                current = value.clone();
+            if let Some(value) = changed(cx) {
                 on_change(view, value, window, cx);
             }
         })
+    }
+
+    fn changes(&self, cx: &App) -> impl FnMut(&App) -> Option<T> + use<T> {
+        let setting = self.clone();
+        let mut current = setting.get(cx);
+        move |cx| {
+            let value = setting.get(cx);
+            if value == current {
+                return None;
+            }
+            current = value.clone();
+            Some(value)
+        }
     }
 }

@@ -4,7 +4,7 @@ use futures::channel::mpsc::UnboundedSender;
 use gpui_kit::{AsyncApp, Task};
 
 use super::filter::RawEvent;
-use super::health::{Health, WatchFailure};
+use super::health::Health;
 
 const FIRST_RETRY: Duration = Duration::from_secs(5);
 const LAST_RETRY: Duration = Duration::from_secs(300);
@@ -27,7 +27,7 @@ impl Recovery {
         health: &Health,
         requests: &UnboundedSender<RawEvent>,
         cx: &AsyncApp,
-    ) -> Option<WatchFailure> {
+    ) -> Option<String> {
         let Some(failure) = health.failure() else {
             if self.failing {
                 log::info!("the file watcher recovered");

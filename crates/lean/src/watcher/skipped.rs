@@ -1,18 +1,20 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::Arc;
+
+use super::shared_paths::SharedPaths;
 
 #[derive(Clone)]
 pub(super) struct SkippedFolders {
     root: Arc<Path>,
-    folders: Arc<RwLock<HashSet<PathBuf>>>,
+    folders: SharedPaths,
 }
 
 impl SkippedFolders {
     pub(super) fn new(root: &Path) -> Self {
         Self {
             root: root.into(),
-            folders: Arc::default(),
+            folders: SharedPaths::default(),
         }
     }
 
@@ -22,7 +24,7 @@ impl SkippedFolders {
     }
 
     pub(super) fn contains_self_or_parent_of(&self, path: &Path) -> bool {
-        let folders = self.read();
+        let folders = self.folders.read();
         !folders.is_empty()
             && path
                 .ancestors()
@@ -31,26 +33,18 @@ impl SkippedFolders {
     }
 
     pub(super) fn insert(&self, folder: PathBuf) {
-        self.write().insert(folder);
+        self.folders.insert(folder);
     }
 
     pub(super) fn extend(&self, folders: Vec<PathBuf>) {
-        self.write().extend(folders);
+        self.folders.extend(folders);
     }
 
     pub(super) fn replace(&self, folders: HashSet<PathBuf>) {
-        *self.write() = folders;
+        self.folders.replace(folders);
     }
 
     pub(super) fn snapshot(&self) -> HashSet<PathBuf> {
-        self.read().clone()
-    }
-
-    fn read(&self) -> RwLockReadGuard<'_, HashSet<PathBuf>> {
-        self.folders.read().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn write(&self) -> RwLockWriteGuard<'_, HashSet<PathBuf>> {
-        self.folders.write().unwrap_or_else(PoisonError::into_inner)
+        self.folders.read().clone()
     }
 }

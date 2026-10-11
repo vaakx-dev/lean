@@ -1,6 +1,5 @@
 mod metadata_targets;
 mod open_file_folders;
-mod recover;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -10,7 +9,7 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher as _};
 
 use super::classify::classify;
 use super::filter::{EventFilter, RawEvent};
-use super::health::{Health, WatchFailure};
+use super::health::Health;
 use super::metadata::SharedMetadata;
 use super::shared_paths::SharedPaths;
 use super::skipped::SkippedFolders;
@@ -105,13 +104,37 @@ impl WatchedTree {
             }
             Err(error) => {
                 log::warn!("failed to start the file watcher: {error}");
-                self.health.fail(WatchFailure::of(&error));
+                self.health.fail(&error);
                 false
             }
         }
     }
 
-    pub(super) fn classify(&mut self, events: Vec<RawEvent>) -> Option<FsChanges> {
+    pub(super) fn process(&mut self, mut events: Vec<RawEvent>) -> Option<FsChanges> {
+        if events.iter().any(|event| event.retry) {
+            self.recover();
+            events.push(RawEvent::rescan());
+        }
+        self.classify(events)
+    }
+
+    fn recover(&mut self) {
+        self.health.restore();
+        if self.watcher.is_none() && !self.create_watcher() {
+            return;
+        }
+        self.metadata_targets.clear();
+        self.open_file_folders.clear();
+        if !WATCH_EACH_FOLDER {
+            let root = self.root.clone();
+            self.unwatch(&root);
+            if self.watch(&root, RecursiveMode::Recursive) {
+                self.folders.insert(root);
+            }
+        }
+    }
+
+    fn classify(&mut self, events: Vec<RawEvent>) -> Option<FsChanges> {
         let changes = classify(events, &self.root, &self.ignore, &self.skipped);
         if let Some(changes) = &changes {
             if changes.rescan {

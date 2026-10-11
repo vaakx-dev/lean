@@ -62,7 +62,7 @@ impl Explorer {
     pub(super) fn expand_selected(
         &mut self,
         _: &ExpandSelected,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(index) = self.selected_index() else {
@@ -78,25 +78,22 @@ impl Explorer {
         if self.expanded.contains(&path) {
             self.select_index(index + 1, cx);
         } else {
-            self.expand_folder(path, cx);
+            self.expand_folder(path, window, cx);
         }
     }
 
     pub(super) fn collapse_selected(
         &mut self,
         _: &CollapseSelected,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(entry) = self
-            .selected_index()
-            .and_then(|index| self.visible.get(index))
-        else {
+        let Some(entry) = self.selected_entry() else {
             return;
         };
         let path = entry.path.clone();
         if entry.is_dir && self.expanded.contains(&path) {
-            self.toggle_folder(path, cx);
+            self.toggle_folder(path, window, cx);
             return;
         }
         let parent_index = path.ancestors().skip(1).find_map(|ancestor| {
@@ -112,18 +109,15 @@ impl Explorer {
     pub(super) fn open_selected(
         &mut self,
         _: &OpenSelected,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(entry) = self
-            .selected_index()
-            .and_then(|index| self.visible.get(index))
-        else {
+        let Some(entry) = self.selected_entry() else {
             return;
         };
         let path = entry.path.clone();
         if entry.is_dir {
-            self.toggle_folder(path, cx);
+            self.toggle_folder(path, window, cx);
         } else {
             cx.emit(PanelEvent::OpenFile(path));
         }

@@ -1,11 +1,12 @@
 mod closing;
 mod header;
 
+use std::path::PathBuf;
+
 use gpui_kit::component::v_flex;
 use gpui_kit::*;
 
 use super::launch::TerminalLaunch;
-use super::start_directory::StartDirectory;
 use super::view::{TerminalEvent, TerminalView};
 
 pub(crate) enum TerminalPanelEvent {
@@ -18,8 +19,8 @@ struct TerminalTab {
 }
 
 pub(crate) struct TerminalPanel {
-    start_directory: StartDirectory,
-    launch: TerminalLaunch,
+    project_root: PathBuf,
+    launch: Box<dyn Fn(&App) -> TerminalLaunch>,
     tabs: Vec<TerminalTab>,
     active: usize,
 }
@@ -28,22 +29,18 @@ impl EventEmitter<TerminalPanelEvent> for TerminalPanel {}
 
 impl TerminalPanel {
     pub(crate) fn new(
-        start_directory: StartDirectory,
-        launch: TerminalLaunch,
+        project_root: PathBuf,
+        launch: impl Fn(&App) -> TerminalLaunch + 'static,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut panel = Self {
-            start_directory,
-            launch,
+            project_root,
+            launch: Box::new(launch),
             tabs: Vec::new(),
             active: 0,
         };
         panel.add_terminal(cx);
         panel
-    }
-
-    pub(crate) fn set_launch(&mut self, launch: TerminalLaunch) {
-        self.launch = launch;
     }
 
     pub(crate) fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -78,8 +75,8 @@ impl TerminalPanel {
     }
 
     fn add_terminal(&mut self, cx: &mut Context<Self>) {
-        let working_directory = self.start_directory.resolve(cx);
-        let launch = self.launch.clone();
+        let launch = (self.launch)(cx);
+        let working_directory = launch.working_directory(&self.project_root, cx);
         let view = cx.new(|cx| TerminalView::new(working_directory, launch, cx));
         let subscription = cx.subscribe(&view, |_, _, event: &TerminalEvent, cx| match event {
             TerminalEvent::Exited | TerminalEvent::TitleChanged => cx.notify(),

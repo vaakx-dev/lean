@@ -6,10 +6,6 @@ use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 pub(super) struct SharedPaths(Arc<RwLock<HashSet<PathBuf>>>);
 
 impl SharedPaths {
-    pub(super) fn new(paths: HashSet<PathBuf>) -> Self {
-        Self(Arc::new(RwLock::new(paths)))
-    }
-
     pub(super) fn contains(&self, path: &Path) -> bool {
         self.read().contains(path)
     }
@@ -18,8 +14,12 @@ impl SharedPaths {
         self.write().insert(path);
     }
 
-    pub(super) fn replace(&self, paths: HashSet<PathBuf>) -> HashSet<PathBuf> {
-        std::mem::replace(&mut *self.write(), paths)
+    pub(super) fn extend(&self, paths: Vec<PathBuf>) {
+        self.write().extend(paths);
+    }
+
+    pub(super) fn replace(&self, paths: HashSet<PathBuf>) {
+        *self.write() = paths;
     }
 
     pub(super) fn read(&self) -> RwLockReadGuard<'_, HashSet<PathBuf>> {

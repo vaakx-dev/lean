@@ -1,11 +1,8 @@
 use gpui_kit::App;
 
-use super::file_action::FileAction;
-use super::file_viewer::FileViewer;
+use super::contributions::{FileAction, FileViewer, StartService, StatusItem};
 use super::panel::Panel;
 use super::registry::Registry;
-use super::service::StartService;
-use super::status_item::StatusItem;
 
 pub(crate) struct Plugin {
     pub(crate) id: &'static str,

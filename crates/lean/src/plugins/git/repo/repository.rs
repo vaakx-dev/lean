@@ -2,6 +2,25 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, anyhow};
 
+pub(crate) struct RepoFile {
+    pub(crate) repository: git2::Repository,
+    pub(crate) relative_path: PathBuf,
+}
+
+impl RepoFile {
+    pub(crate) fn open(root: &Path, path: &Path) -> Result<Self> {
+        let (repository, workdir) = open(root)?;
+        let relative_path = canonical(path)
+            .strip_prefix(&workdir)
+            .with_context(|| format!("{} is outside the repository", path.display()))?
+            .to_path_buf();
+        Ok(Self {
+            repository,
+            relative_path,
+        })
+    }
+}
+
 pub(super) fn open(root: &Path) -> Result<(git2::Repository, PathBuf)> {
     let repository = git2::Repository::discover(root)?;
     let workdir = workdir(&repository)
@@ -23,10 +42,13 @@ pub(super) fn git_dirs(repository: &git2::Repository) -> Vec<PathBuf> {
 }
 
 pub(super) fn canonical(path: &Path) -> PathBuf {
-    dunce::canonicalize(path).unwrap_or_else(|error| {
-        log::debug!("failed to canonicalize {}: {error}", path.display());
-        path.to_path_buf()
-    })
+    if let Ok(path) = dunce::canonicalize(path) {
+        return path;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => canonical(parent).join(name),
+        _ => path.to_path_buf(),
+    }
 }
 
 pub(super) fn relative_paths<'a>(paths: &'a [PathBuf], workdir: &Path) -> Result<Vec<&'a Path>> {
@@ -39,10 +61,17 @@ pub(super) fn relative_paths<'a>(paths: &'a [PathBuf], workdir: &Path) -> Result
         .collect()
 }
 
-pub(super) fn head_commit(repository: &git2::Repository) -> Result<Option<git2::Commit<'_>>> {
+pub(crate) fn head_commit(repository: &git2::Repository) -> Result<Option<git2::Commit<'_>>> {
     match repository.head() {
         Ok(head) => Ok(Some(head.peel_to_commit()?)),
-        Err(error) if error.code() == git2::ErrorCode::UnbornBranch => Ok(None),
+        Err(error)
+            if matches!(
+                error.code(),
+                git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
+            ) =>
+        {
+            Ok(None)
+        }
         Err(error) => Err(error.into()),
     }
 }

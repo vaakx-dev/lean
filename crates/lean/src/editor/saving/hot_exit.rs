@@ -1,134 +1,129 @@
-mod restore;
 mod store;
 
-use std::cell::RefCell;
 use std::path::Path;
-use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::*;
 
 use super::super::EditorArea;
+use super::super::open_file::OpenFile;
+use super::super::opening::Placement;
 use crate::files::settings::HOT_EXIT;
-use store::{BackupFile, BackupStore};
+use store::BackupStore;
+
+pub(in crate::editor) use store::BackupFile;
 
 const BACKUP_DELAY: Duration = Duration::from_secs(1);
 
-pub(super) type SharedHotExit = Rc<RefCell<HotExit>>;
-
-pub(super) struct HotExit {
+#[derive(Default)]
+pub(in crate::editor) struct HotExit {
     store: Option<BackupStore>,
     ready: bool,
     stored: bool,
     kept: Vec<(u64, u64)>,
-    _pending: Task<()>,
+    _pending: Option<Task<()>>,
 }
 
-impl HotExit {
-    pub(super) fn start(
+impl EditorArea {
+    pub(super) fn start_hot_exit(
+        &mut self,
         project_root: &Path,
         window: &mut Window,
-        cx: &mut Context<EditorArea>,
-    ) -> SharedHotExit {
+        cx: &mut Context<Self>,
+    ) {
         let store = BackupStore::for_project(project_root);
         let stored = store.as_ref().is_some_and(BackupStore::exists);
-        let hot_exit = Rc::new(RefCell::new(Self {
+        self.hot_exit = HotExit {
             store: store.clone(),
-            ready: false,
             stored,
-            kept: Vec::new(),
-            _pending: Task::ready(()),
-        }));
+            ..HotExit::default()
+        };
         let read =
             cx.background_spawn(
                 async move { store.filter(|_| stored).and_then(|store| store.read()) },
             );
-        let shared = hot_exit.clone();
         cx.spawn_in(window, async move |area, cx| {
             let backup = read.await;
-            let update = area.update_in(cx, |area, window, cx| {
-                shared.borrow_mut().ready = true;
+            area.update_in(cx, |area, window, cx| {
+                area.hot_exit.ready = true;
                 match backup {
                     Some(backup) if HOT_EXIT.get(cx) => {
-                        area.restore_backup(backup.files, window, cx)
+                        for file in backup.files {
+                            let path = file.path.clone();
+                            area.open_placed(path, Placement::Restore(file), window, cx);
+                        }
                     }
-                    _ => shared.borrow_mut().write(area, cx, false),
+                    _ => area.back_up_unsaved(false, cx),
                 }
-            });
-            if let Err(error) = update {
-                log::debug!("editor area dropped before restoring unsaved files: {error:#}");
-            }
+            })
+            .ok();
         })
         .detach();
-        hot_exit
     }
 
-    pub(super) fn schedule(
-        this: &SharedHotExit,
-        area: &mut EditorArea,
-        window: &mut Window,
-        cx: &mut Context<EditorArea>,
-    ) {
-        let kept = area.refresh_kept_on_exit(cx);
-        if this.borrow().kept == kept {
+    pub(super) fn schedule_backup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let kept: Vec<(u64, u64)> = self
+            .files
+            .iter()
+            .filter(|file| file.kept_on_exit(cx))
+            .map(|file| (file.id, file.version))
+            .collect();
+        if self.hot_exit.kept == kept {
             return;
         }
-        let shared = this.clone();
-        let pending = cx.spawn_in(window, async move |area, cx| {
+        self.hot_exit.kept = kept;
+        self.hot_exit._pending = Some(cx.spawn_in(window, async move |area, cx| {
             cx.background_executor().timer(BACKUP_DELAY).await;
-            let update = area.update(cx, |area, cx| shared.borrow_mut().write(area, cx, false));
-            if let Err(error) = update {
-                log::debug!("editor area dropped before backing up unsaved files: {error:#}");
-            }
-        });
-        let mut hot_exit = this.borrow_mut();
-        hot_exit.kept = kept;
-        hot_exit._pending = pending;
+            area.update(cx, |area, cx| area.back_up_unsaved(false, cx))
+                .ok();
+        }));
     }
 
-    pub(super) fn write(&mut self, area: &EditorArea, cx: &App, now: bool) {
-        if !self.ready {
-            self.kept.clear();
+    pub(super) fn back_up_unsaved(&mut self, now: bool, cx: &App) {
+        if !self.hot_exit.ready {
+            self.hot_exit.kept.clear();
             return;
         }
-        let Some(store) = &self.store else {
+        let Some(store) = &self.hot_exit.store else {
             return;
         };
-        let files = if HOT_EXIT.get(cx) {
-            area.unsaved_backups(cx)
-        } else {
-            Vec::new()
-        };
-        if files.is_empty() && !self.stored {
+        let files = self.unsaved_backups(cx);
+        if files.is_empty() && !self.hot_exit.stored {
             return;
         }
-        self.stored = !files.is_empty();
+        self.hot_exit.stored = !files.is_empty();
         if now {
             store.save_now(files);
         } else {
             store.save(files, cx);
         }
     }
-}
 
-impl EditorArea {
-    fn refresh_kept_on_exit(&mut self, cx: &App) -> Vec<(u64, u64)> {
-        let enabled = HOT_EXIT.get(cx);
-        let mut kept = Vec::new();
-        for file in &mut self.files {
-            file.disk.kept_on_exit =
-                enabled && file.is_file() && file.dirty && file.view.unsaved_text(cx).is_some();
-            if file.disk.kept_on_exit {
-                kept.push((file.id, file.version));
-            }
+    pub(in crate::editor) fn apply_backup(
+        &mut self,
+        index: usize,
+        backup: BackupFile,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(file) = self.files.get_mut(index).filter(|file| !file.dirty) else {
+            return;
+        };
+        file.view.restore_unsaved(backup.text, window, cx);
+        file.dirty = file.view.differs_from_saved(cx);
+        if file.dirty && file.disk.saved_hash != backup.base_hash {
+            file.disk.conflict = true;
         }
-        kept
+        cx.notify();
     }
 
     fn unsaved_backups(&self, cx: &App) -> Vec<BackupFile> {
+        if !HOT_EXIT.get(cx) {
+            return Vec::new();
+        }
         self.files
             .iter()
-            .filter(|file| file.dirty && file.disk.kept_on_exit)
+            .filter(|file| file.is_file() && file.dirty)
             .filter_map(|file| {
                 Some(BackupFile {
                     path: file.path.clone(),
@@ -137,5 +132,11 @@ impl EditorArea {
                 })
             })
             .collect()
+    }
+}
+
+impl OpenFile {
+    pub(in crate::editor) fn kept_on_exit(&self, cx: &App) -> bool {
+        HOT_EXIT.get(cx) && self.is_file() && self.dirty && self.view.unsaved_text(cx).is_some()
     }
 }

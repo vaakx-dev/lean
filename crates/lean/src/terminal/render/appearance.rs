@@ -1,8 +1,13 @@
-use gpui_kit::component::Theme;
-use gpui_kit::{Font, Hsla, Pixels, font};
+use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::{App, Font, Hsla, Pixels, SharedString, font, px};
 
 use super::palette::Palette;
-use crate::terminal::font::TerminalFont;
+use crate::editor::settings::{font_family as editor_font_family, font_size as editor_font_size};
+use crate::terminal::settings::{
+    FONT_FAMILY, FONT_SIZE, LINE_HEIGHT, MAX_FONT_SIZE, MAX_LINE_HEIGHT, MIN_FONT_SIZE,
+    MIN_LINE_HEIGHT,
+};
+use crate::theme::installed_font_names;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CursorAppearance {
@@ -20,21 +25,37 @@ pub(crate) struct TerminalAppearance {
 }
 
 impl TerminalAppearance {
-    pub(crate) fn new(
-        theme: &Theme,
-        terminal_font: TerminalFont,
-        cursor: CursorAppearance,
-    ) -> Self {
+    pub(crate) fn new(cursor: CursorAppearance, cx: &mut App) -> Self {
         Self {
-            palette: Palette::new(theme),
-            font: font(terminal_font.family),
-            font_size: terminal_font.size,
-            line_height: terminal_font.line_height,
+            font: font(font_family(cx)),
+            font_size: font_size(cx),
+            line_height: LINE_HEIGHT.get(cx).clamp(MIN_LINE_HEIGHT, MAX_LINE_HEIGHT),
+            palette: Palette::new(cx.theme()),
             cursor,
         }
     }
 
     pub(crate) fn background(&self) -> Hsla {
         self.palette.background()
+    }
+}
+
+fn font_family(cx: &mut App) -> SharedString {
+    match FONT_FAMILY.get(cx) {
+        Some(name) if is_installed(&name, cx) => name.into(),
+        _ => editor_font_family(cx),
+    }
+}
+
+fn is_installed(name: &str, cx: &mut App) -> bool {
+    installed_font_names(cx)
+        .iter()
+        .any(|installed| installed == name)
+}
+
+fn font_size(cx: &App) -> Pixels {
+    match FONT_SIZE.get(cx) {
+        Some(size) => px(size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)),
+        None => editor_font_size(cx),
     }
 }

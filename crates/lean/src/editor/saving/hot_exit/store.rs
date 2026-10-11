@@ -16,7 +16,7 @@ pub(super) struct Backup {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(super) struct BackupFile {
+pub(in crate::editor) struct BackupFile {
     pub(super) path: PathBuf,
     pub(super) base_hash: u64,
     #[serde(

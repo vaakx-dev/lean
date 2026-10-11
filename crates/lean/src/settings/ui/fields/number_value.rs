@@ -19,7 +19,7 @@ macro_rules! integer_number_values {
     };
 }
 
-integer_number_values!(u8, u16, u32, u64, usize, i32, i64);
+integer_number_values!(u32, u64, usize);
 
 impl NumberValue for f32 {
     fn to_number(&self) -> Option<f64> {
@@ -28,16 +28,6 @@ impl NumberValue for f32 {
 
     fn from_number(number: Option<f64>) -> Option<Self> {
         number.map(|number| number as f32)
-    }
-}
-
-impl NumberValue for f64 {
-    fn to_number(&self) -> Option<f64> {
-        Some(*self)
-    }
-
-    fn from_number(number: Option<f64>) -> Option<Self> {
-        number
     }
 }
 

@@ -1,4 +1,4 @@
-use gpui_kit::{App, Context, Pixels, px};
+use gpui_kit::{App, Context, Pixels, Window, px};
 
 use super::Explorer;
 use super::settings::{
@@ -59,7 +59,7 @@ impl ExplorerOptions {
 }
 
 impl Explorer {
-    pub(super) fn apply_options(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn apply_options(&mut self, window: &Window, cx: &mut Context<Self>) {
         let options = ExplorerOptions::read(cx);
         if options == self.options {
             return;
@@ -77,7 +77,7 @@ impl Explorer {
         cx.notify();
         if starts_following {
             self.followed = None;
-            self.follow_active_editor(cx);
+            self.follow_active_editor(window, cx);
         }
     }
 }

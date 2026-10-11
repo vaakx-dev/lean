@@ -1,8 +1,7 @@
-use gpui_kit::component::v_flex;
+use gpui_kit::component::{ActiveTheme as _, v_flex};
 use gpui_kit::*;
 
 use super::SourceControl;
-use super::placeholder::placeholder;
 
 impl Render for SourceControl {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -20,7 +19,13 @@ impl SourceControl {
             return self.render_git_error(error, cx);
         }
         if git.state().is_none() {
-            return placeholder("This folder is not a git repository.", cx);
+            return div()
+                .size_full()
+                .p_4()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child("This folder is not a git repository.")
+                .into_any_element();
         }
         v_flex()
             .size_full()

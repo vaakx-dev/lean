@@ -6,7 +6,6 @@ use gpui_kit::*;
 
 use super::draft::{Commit, DraftInput};
 use super::field::Field;
-use super::is_stacked;
 use super::number_value::{NumberValue, format_number, parse_number};
 use crate::settings::Setting;
 
@@ -56,6 +55,7 @@ pub(crate) fn number<T: NumberValue>(
     Field::bound(setting, title, description, move |options, window, cx| {
         render_number(&control_setting, &number, options, window, cx)
     })
+    .control_width(rems(8.))
 }
 
 fn render_number<T: NumberValue>(
@@ -99,13 +99,7 @@ fn render_number<T: NumberValue>(
         .when_some(number.unit.clone(), |input, unit| {
             input.suffix(div().text_xs().text_color(muted).child(unit))
         })
-        .map(|input| {
-            if is_stacked(options) {
-                input.w_full()
-            } else {
-                input.w_32()
-            }
-        })
+        .w_full()
         .into_any_element()
 }
 

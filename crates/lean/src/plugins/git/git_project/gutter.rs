@@ -9,16 +9,9 @@ use super::GitProject;
 use crate::plugins::GutterMarker;
 use crate::plugins::git::diff::{DiffBase, Hunk, gutter_markers, hunks_for};
 use crate::plugins::git::repo::FileStatus;
-use crate::plugins::git::settings::{GUTTER_BASE, GUTTER_ENABLED, GutterBase};
+use crate::plugins::git::settings::{GUTTER_BASE, GUTTER_ENABLED};
 
 const DEBOUNCE: Duration = Duration::from_millis(200);
-
-pub(super) enum GutterScope {
-    File(PathBuf),
-    Opened,
-    All,
-    Repaint,
-}
 
 #[derive(Default)]
 pub(super) struct GutterSync {
@@ -41,18 +34,22 @@ struct GutterResult {
 }
 
 impl GitProject {
-    pub(super) fn schedule_gutter(&mut self, scope: GutterScope, cx: &mut Context<Self>) {
-        match scope {
-            GutterScope::File(path) => {
-                self.gutter.pending.insert(path);
-            }
-            GutterScope::Opened => {}
-            GutterScope::All => self.gutter.all = true,
-            GutterScope::Repaint => {
-                self.gutter.applied.clear();
-                self.gutter.all = true;
-            }
-        }
+    pub(super) fn repaint_gutter(&mut self, cx: &mut Context<Self>) {
+        self.gutter.applied.clear();
+        self.schedule_gutter(cx);
+    }
+
+    pub(super) fn refresh_gutter(&mut self, cx: &mut Context<Self>) {
+        self.gutter.all = true;
+        self.schedule_gutter(cx);
+    }
+
+    pub(super) fn refresh_gutter_for(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.gutter.pending.insert(path);
+        self.schedule_gutter(cx);
+    }
+
+    pub(super) fn schedule_gutter(&mut self, cx: &mut Context<Self>) {
         self.gutter.task = Some(cx.spawn(async move |git, cx| {
             cx.background_executor().timer(DEBOUNCE).await;
             let Ok((workdir, base, jobs)) = git.update(cx, |git, cx| git.gutter_jobs(cx)) else {
@@ -61,16 +58,14 @@ impl GitProject {
             let results = cx
                 .background_spawn(async move { compute_hunks(workdir.as_deref(), base, jobs) })
                 .await;
-            if let Err(error) = git.update(cx, |git, cx| git.apply_gutter(results, cx)) {
-                log::debug!("git state dropped before the change markers were ready: {error:#}");
-            }
+            git.update(cx, |git, cx| git.apply_gutter(results, cx)).ok();
         }));
     }
 
     fn gutter_jobs(&self, cx: &App) -> (Option<PathBuf>, DiffBase, Vec<GutterJob>) {
         let workdir = self.state.as_ref().map(|state| state.workdir.clone());
         let enabled = GUTTER_ENABLED.get(cx);
-        let base = diff_base(GUTTER_BASE.get(cx));
+        let base = GUTTER_BASE.get(cx);
         let jobs = self
             .editor_area
             .read(cx)
@@ -137,13 +132,6 @@ impl GitProject {
         self.gutter
             .applied
             .retain(|path, _| open_paths.contains(path));
-    }
-}
-
-fn diff_base(base: GutterBase) -> DiffBase {
-    match base {
-        GutterBase::Index => DiffBase::Index,
-        GutterBase::Head => DiffBase::Staged,
     }
 }
 

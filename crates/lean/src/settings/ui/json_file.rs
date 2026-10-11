@@ -29,8 +29,7 @@ fn open_settings_json(editor_area: &WeakEntity<EditorArea>, window: &mut Window,
         window.push_notification(format!("Couldn't create settings.json: {error:#}"), cx);
         return;
     }
-    let opened = editor_area.update(cx, |area, cx| area.open(file, window, cx));
-    if let Err(error) = opened {
-        log::debug!("editor area dropped before opening settings.json: {error:#}");
-    }
+    editor_area
+        .update(cx, |area, cx| area.open(file, window, cx))
+        .ok();
 }

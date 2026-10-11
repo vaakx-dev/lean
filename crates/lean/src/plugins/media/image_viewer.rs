@@ -99,10 +99,9 @@ impl ImageViewer {
             let decoded = cx
                 .background_spawn(async move { image.to_image_data(renderer) })
                 .await;
-            let update = viewer.update(cx, |viewer, cx| viewer.show_decoded(decoded, cx));
-            if let Err(error) = update {
-                log::debug!("image viewer closed before decoding finished: {error:#}");
-            }
+            viewer
+                .update(cx, |viewer, cx| viewer.show_decoded(decoded, cx))
+                .ok();
         });
     }
 

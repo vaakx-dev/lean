@@ -5,58 +5,15 @@ use notify::ErrorKind;
 
 const TOO_MANY_OPEN_FILES: i32 = 24;
 
-#[derive(Clone)]
-pub(super) enum WatchFailure {
-    WatchLimit,
-    InstanceLimit,
-    Other(String),
-}
-
-impl WatchFailure {
-    pub(super) fn of(error: &notify::Error) -> Self {
-        match &error.kind {
-            ErrorKind::MaxFilesWatch => Self::WatchLimit,
-            ErrorKind::Io(error) if error.raw_os_error() == Some(TOO_MANY_OPEN_FILES) => {
-                Self::InstanceLimit
-            }
-            _ => Self::Other(error.to_string()),
-        }
-    }
-
-    pub(super) fn message(&self) -> String {
-        match self {
-            Self::WatchLimit => with_hint(
-                "Lean reached the system limit on watched folders, so changes made outside Lean may not show up.",
-                "fs.inotify.max_user_watches=524288",
-            ),
-            Self::InstanceLimit => with_hint(
-                "Lean couldn't start a file watcher because too many are already open, so changes made outside Lean may not show up.",
-                "fs.inotify.max_user_instances=512",
-            ),
-            Self::Other(error) => format!(
-                "File watching stopped ({error}), so changes made outside Lean may not show up. Lean will keep retrying."
-            ),
-        }
-    }
-}
-
-fn with_hint(problem: &str, sysctl: &str) -> String {
-    if cfg!(target_os = "linux") {
-        format!("{problem} Raise the limit with \"sudo sysctl {sysctl}\"; Lean will keep retrying.")
-    } else {
-        format!("{problem} Lean will keep retrying.")
-    }
-}
-
 #[derive(Clone, Default)]
-pub(super) struct Health(Arc<Mutex<Option<WatchFailure>>>);
+pub(super) struct Health(Arc<Mutex<Option<String>>>);
 
 impl Health {
     pub(super) fn is_ok(&self) -> bool {
         self.state().is_none()
     }
 
-    pub(super) fn failure(&self) -> Option<WatchFailure> {
+    pub(super) fn failure(&self) -> Option<String> {
         self.state().clone()
     }
 
@@ -64,10 +21,10 @@ impl Health {
         *self.state() = None;
     }
 
-    pub(super) fn fail(&self, failure: WatchFailure) {
+    pub(super) fn fail(&self, error: &notify::Error) {
         let mut state = self.state();
         if state.is_none() {
-            *state = Some(failure);
+            *state = Some(failure_message(error));
         }
     }
 
@@ -76,12 +33,38 @@ impl Health {
             log::debug!("file watcher: {error}");
         } else {
             log::warn!("file watcher error: {error}");
-            self.fail(WatchFailure::of(error));
+            self.fail(error);
         }
     }
 
-    fn state(&self) -> MutexGuard<'_, Option<WatchFailure>> {
+    fn state(&self) -> MutexGuard<'_, Option<String>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+fn failure_message(error: &notify::Error) -> String {
+    match &error.kind {
+        ErrorKind::MaxFilesWatch => with_hint(
+            "Lean reached the system limit on watched folders, so changes made outside Lean may not show up.",
+            "fs.inotify.max_user_watches=524288",
+        ),
+        ErrorKind::Io(io_error) if io_error.raw_os_error() == Some(TOO_MANY_OPEN_FILES) => {
+            with_hint(
+                "Lean couldn't start a file watcher because too many are already open, so changes made outside Lean may not show up.",
+                "fs.inotify.max_user_instances=512",
+            )
+        }
+        _ => format!(
+            "File watching stopped ({error}), so changes made outside Lean may not show up. Lean will keep retrying."
+        ),
+    }
+}
+
+fn with_hint(problem: &str, sysctl: &str) -> String {
+    if cfg!(target_os = "linux") {
+        format!("{problem} Raise the limit with \"sudo sysctl {sysctl}\"; Lean will keep retrying.")
+    } else {
+        format!("{problem} Lean will keep retrying.")
     }
 }
 

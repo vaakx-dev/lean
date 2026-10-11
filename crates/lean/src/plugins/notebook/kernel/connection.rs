@@ -49,7 +49,7 @@ pub(super) async fn run(
         .await
         .err()
         .map(|error| format!("{error:#}"));
-    send(&events, KernelEvent::Stopped(error));
+    events.unbounded_send(KernelEvent::Stopped(error)).ok();
 }
 
 async fn serve(
@@ -121,10 +121,10 @@ async fn drive(
             Step::Message(message) => {
                 if !ready {
                     ready = true;
-                    send(events, KernelEvent::Ready);
+                    events.unbounded_send(KernelEvent::Ready).ok();
                 }
                 if let Some(event) = kernel_event(message) {
-                    send(events, event);
+                    events.unbounded_send(event).ok();
                 }
             }
             Step::Nudge => sockets.shell.send(KernelInfoRequest {}.into()).await?,
@@ -213,10 +213,4 @@ async fn write_connection_file(info: &ConnectionInfo) -> Result<PathBuf> {
         .await
         .with_context(|| format!("failed to write {}", file.display()))?;
     Ok(file)
-}
-
-fn send(events: &UnboundedSender<KernelEvent>, event: KernelEvent) {
-    if events.unbounded_send(event).is_err() {
-        log::debug!("the notebook closed before its kernel stopped");
-    }
 }

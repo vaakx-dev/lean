@@ -76,10 +76,8 @@ impl OpenFile {
         let subscription = view.subscribe(
             cx,
             Box::new(move |event: &FileViewEvent, cx: &mut App| {
-                let update = area.update(cx, |area, cx| area.handle_view_event(id, event, cx));
-                if let Err(error) = update {
-                    log::debug!("editor area dropped while a file view changed: {error:#}");
-                }
+                area.update(cx, |area, cx| area.handle_view_event(id, event, cx))
+                    .ok();
             }),
         );
         Self {

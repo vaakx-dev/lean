@@ -19,20 +19,26 @@ pub(super) fn build_panels(
         .into_iter()
         .map(|panel| {
             let view = (panel.build)(context, window, cx);
-            let workspace = cx.weak_entity();
+            let editor_area = context.editor_area.downgrade();
             let subscription = view.subscribe(
                 window,
                 cx,
                 Box::new(
                     move |event: &PanelEvent, window: &mut Window, cx: &mut App| {
-                        let update = workspace.update(cx, |workspace, cx| {
-                            workspace.handle_panel_event(event, window, cx)
-                        });
-                        if let Err(error) = update {
-                            log::debug!(
-                                "workspace dropped while handling a panel event: {error:#}"
-                            );
-                        }
+                        editor_area
+                            .update(cx, |area, cx| match event {
+                                PanelEvent::OpenFile(path) => area.open(path.clone(), window, cx),
+                                PanelEvent::OpenFileAt { path, line, column } => {
+                                    area.open_at(path.clone(), *line, *column, window, cx)
+                                }
+                                PanelEvent::PathRenamed { from, to } => {
+                                    area.rename_files(from, to, cx)
+                                }
+                                PanelEvent::PathDeleted(path) => {
+                                    area.close_deleted_files(path, window, cx)
+                                }
+                            })
+                            .ok();
                     },
                 ),
             );
@@ -43,22 +49,4 @@ pub(super) fn build_panels(
             }
         })
         .collect()
-}
-
-impl Workspace {
-    fn handle_panel_event(
-        &mut self,
-        event: &PanelEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            PanelEvent::OpenFile(path) => self.open_file(path.clone(), window, cx),
-            PanelEvent::OpenFileAt { path, line, column } => {
-                self.open_file_at(path.clone(), *line, *column, window, cx)
-            }
-            PanelEvent::PathRenamed { from, to } => self.rename_open_files(from, to, cx),
-            PanelEvent::PathDeleted(path) => self.close_deleted_files(path, window, cx),
-        }
-    }
 }

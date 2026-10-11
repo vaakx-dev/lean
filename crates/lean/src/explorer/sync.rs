@@ -15,7 +15,7 @@ impl Explorer {
         cx: &mut Context<Self>,
     ) {
         for folder in self.folders_to_reload(changes, cx) {
-            self.reload_folder(folder, window, cx);
+            self.load_directory(folder, window, cx);
         }
     }
 

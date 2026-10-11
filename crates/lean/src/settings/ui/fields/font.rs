@@ -1,15 +1,11 @@
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectState};
 use gpui_kit::component::{IndexPath, Sizable as _};
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::field::Field;
-use super::is_stacked;
 use super::text_value::TextValue;
 use crate::settings::Setting;
 use crate::theme::installed_font_names;
-
-const FONT_WIDTH: Pixels = px(240.);
 
 type FontList = SearchableVec<SharedString>;
 
@@ -35,15 +31,10 @@ pub(crate) fn font<T: TextValue>(
             .cleanable(true)
             .disabled(options.is_disabled())
             .with_size(options.size())
-            .map(|select| {
-                if is_stacked(options) {
-                    select.w_full()
-                } else {
-                    select.w(FONT_WIDTH)
-                }
-            })
+            .w_full()
             .into_any_element()
     })
+    .control_width(px(240.))
 }
 
 fn font_select<T: TextValue>(

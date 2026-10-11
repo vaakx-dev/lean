@@ -1,12 +1,14 @@
 use std::path::Path;
 
 use anyhow::Result;
+use gpui_kit::component::highlighter::{LanguageRegistry, SyntaxHighlighter};
 use gpui_kit::*;
 
 use super::TextFile;
-use super::language::warm_highlighter;
 use crate::editor::binary_file::BinaryFile;
 use crate::editor::file_text::normalize_line_endings;
+use crate::files::Language;
+use crate::files::settings::highlight_limit_bytes;
 use crate::plugins::{AnyFileView, FileViewer, OpenRequest};
 
 pub(crate) const TEXT_VIEWER: FileViewer = FileViewer {
@@ -16,13 +18,25 @@ pub(crate) const TEXT_VIEWER: FileViewer = FileViewer {
     open,
 };
 
+pub(super) fn language_for(path: &Path, content_length: usize) -> Language {
+    if content_length > highlight_limit_bytes() {
+        Language::PLAIN
+    } else {
+        Language::for_path(path)
+    }
+}
+
 fn handles_any(_: &Path) -> bool {
     true
 }
 
 fn prepare(path: &Path, bytes: &[u8]) {
-    if std::str::from_utf8(bytes).is_ok() {
-        warm_highlighter(path, bytes.len());
+    if std::str::from_utf8(bytes).is_err() {
+        return;
+    }
+    let id = language_for(path, bytes.len()).id();
+    if LanguageRegistry::singleton().language(id).is_some() {
+        drop(SyntaxHighlighter::new(id));
     }
 }
 

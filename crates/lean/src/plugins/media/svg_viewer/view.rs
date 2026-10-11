@@ -3,7 +3,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::SvgViewer;
-use super::mode::Mode;
+use crate::plugins::media::settings::SvgMode;
 
 impl SvgViewer {
     fn render_code(&self) -> Div {
@@ -11,7 +11,7 @@ impl SvgViewer {
     }
 
     fn render_preview(&self, cx: &Context<Self>) -> Stateful<Div> {
-        let split = self.mode == Mode::Split;
+        let split = self.mode == SvgMode::Split;
         div()
             .id("svg-preview-pane")
             .flex_1()
@@ -40,7 +40,7 @@ impl Render for SvgViewer {
             .relative()
             .flex()
             .size_full()
-            .when(self.mode == Mode::Preview, |root| {
+            .when(self.mode == SvgMode::Preview, |root| {
                 root.track_focus(&self.focus_handle)
             })
             .when(self.mode.shows_code(), |root| {
