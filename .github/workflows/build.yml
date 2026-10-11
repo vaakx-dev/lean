@@ -9,6 +9,9 @@ on:
       profile:
         type: string
         required: true
+      channel:
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -42,7 +45,10 @@ jobs:
         with:
           key: ${{ inputs.profile }}
       - name: Build lean
-        run: cargo build --locked --profile ${{ inputs.profile }}
+        shell: bash
+        env:
+          LEAN_CHANNEL: ${{ inputs.channel }}
+        run: LEAN_COMMIT="$(git rev-parse HEAD)" cargo build --locked --profile ${{ inputs.profile }}
       - name: Package lean
         shell: bash
         run: |

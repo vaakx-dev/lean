@@ -21,6 +21,7 @@ jobs:
     with:
       ref: ${{ github.ref }}
       profile: dist
+      channel: stable
 
   publish:
     needs: build

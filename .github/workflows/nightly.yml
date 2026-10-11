@@ -29,33 +29,11 @@ jobs:
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           if [ "$built" != "$commit" ]; then echo "build=true" >> "$GITHUB_OUTPUT"; fi
 
-  build:
+  release:
     needs: changed
     if: needs.changed.outputs.build == 'true'
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/rolling-release.yml
     with:
-      ref: ${{ needs.changed.outputs.commit }}
-      profile: release
-
-  publish:
-    needs: [changed, build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: lean-*
-          path: assets
-          merge-multiple: true
-      - name: Write the checksums
-        run: cd assets && sha256sum * > SHA256SUMS
-      - name: Move the nightly release to main
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          COMMIT: ${{ needs.changed.outputs.commit }}
-        run: |
-          gh release delete nightly --cleanup-tag --yes || true
-          gh release create nightly --target "$COMMIT" --prerelease --latest=false \
-            --title "Nightly $(date -u +%Y-%m-%d)" \
-            --notes "Built from ${COMMIT:0:7} on main. This release moves at most once a day when main changes." \
-            assets/*
+      channel: nightly
+      commit: ${{ needs.changed.outputs.commit }}
+      schedule: at most once a day when main changes
