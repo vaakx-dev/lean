@@ -1,0 +1,50 @@
+name: Rolling release
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        required: true
+      commit:
+        type: string
+        required: true
+      schedule:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ inputs.commit }}
+      profile: release
+      channel: ${{ inputs.channel }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: lean-*
+          path: assets
+          merge-multiple: true
+      - name: Write the checksums
+        run: cd assets && sha256sum * > SHA256SUMS
+      - name: Move the ${{ inputs.channel }} release to the new build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT: ${{ inputs.commit }}
+          SCHEDULE: ${{ inputs.schedule }}
+        run: |
+          gh release delete "$CHANNEL" --cleanup-tag --yes || true
+          gh release create "$CHANNEL" --target "$COMMIT" --prerelease --latest=false \
+            --title "${CHANNEL^} $(date -u +%Y-%m-%d) (${COMMIT:0:7})" \
+            --notes "Built from ${COMMIT:0:7} on main. This release moves $SCHEDULE." \
+            assets/*
