@@ -7,6 +7,7 @@ use notify::{Event, EventKind};
 use super::metadata::{MetadataPath, SharedMetadata, is_dot_git};
 use super::shared_paths::SharedPaths;
 use super::skipped::SkippedFolders;
+use crate::project::IgnoreCache;
 
 pub(super) struct RawEvent {
     pub(super) paths: Vec<PathBuf>,
@@ -49,6 +50,7 @@ impl RawEvent {
 
 #[derive(Clone)]
 pub(super) struct EventFilter {
+    pub(super) ignore: IgnoreCache,
     pub(super) metadata: SharedMetadata,
     pub(super) skipped: SkippedFolders,
     pub(super) open_files: SharedPaths,
@@ -88,7 +90,9 @@ impl EventFilter {
     }
 
     fn is_followed(&self, path: &Path) -> bool {
-        !self.skipped.contains_parent_of(path) || self.open_files.contains(path)
+        let is_skipped =
+            self.skipped.contains_parent_of(path) || self.ignore.is_inside_excluded(path);
+        !is_skipped || self.open_files.contains(path)
     }
 }
 

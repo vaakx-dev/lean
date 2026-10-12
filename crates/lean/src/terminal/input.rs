@@ -1,5 +1,6 @@
 mod keymap;
 mod keys;
+mod wheel;
 
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::TermMode;
@@ -20,8 +21,8 @@ impl TerminalView {
     ) {
         let keystroke = &event.keystroke;
         if !self.is_running() {
-            if keystroke.key == RESTART_KEY {
-                self.start(cx);
+            if self.can_restart() && keystroke.key == RESTART_KEY {
+                self.restart(cx);
                 cx.stop_propagation();
             }
             return;
@@ -61,9 +62,15 @@ impl TerminalView {
             return;
         }
         let mode = session.mode();
-        let alternate_scroll = mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
-            && !mode.intersects(TermMode::MOUSE_MODE);
-        if alternate_scroll {
+        if mode.intersects(TermMode::MOUSE_MODE) {
+            let cell = self.viewport_point(event.position, &session.size()).0;
+            session.write(wheel::wheel_report_bytes(
+                lines,
+                cell,
+                &event.modifiers,
+                mode,
+            ));
+        } else if mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL) {
             session.write(keys::alternate_scroll_bytes(lines, mode));
         } else {
             session.scroll(Scroll::Delta(lines));

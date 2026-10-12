@@ -44,18 +44,27 @@ gpui-kit = { version = "=0.7.1", features = [
 ] }
 git2 = { version = "0.20", default-features = false }
 log = "0.4"
-env_logger = "0.11"
 
 [profile.dev]
 debug = "line-tables-only"
 
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
 
 [profile.release]
 lto = "thin"
-codegen-units = 16
 strip = true
+panic = "abort"
+
+[profile.release.package.tree-sitter-cpp]
+opt-level = "s"
+
+[profile.release.package.tree-sitter-typescript]
+opt-level = "s"
+
+[profile.release.package.tree-sitter-bash]
+opt-level = "s"
 
 [profile.perf]
 inherits = "release"

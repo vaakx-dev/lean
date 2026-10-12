@@ -7,13 +7,12 @@ use super::{
     BELL, BellMode, CONFIRM_CLOSE_RUNNING, COPY_ON_SELECT, CURSOR_BLINK, CURSOR_SHAPE,
     ClipboardAccess, CursorShapeChoice, FONT_FAMILY, FONT_SIZE, LINE_HEIGHT, MAX_FONT_SIZE,
     MAX_LINE_HEIGHT, MIN_FONT_SIZE, MIN_LINE_HEIGHT, OSC52, PANEL_HEIGHT, SCROLLBACK, SHELL_ARGS,
-    SHELL_LOGIN, SHELL_PROGRAM, WORKING_DIRECTORY, WorkingDirectory,
+    SHELL_LOGIN, SHELL_PROGRAM, WORKING_DIRECTORY, WorkingDirectory, default_shell_program,
 };
 use crate::editor::settings::font_size as editor_font_size;
 use crate::settings::ui::fields::{
     Number, PathKind, font, group, list, number, path, select, switch,
 };
-use crate::terminal::session::default_shell_program;
 
 pub(crate) fn settings_page(cx: &App) -> SettingPage {
     SettingPage::new("Terminal")

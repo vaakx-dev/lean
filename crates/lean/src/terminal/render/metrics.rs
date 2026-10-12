@@ -5,6 +5,7 @@ use crate::terminal::session::GridSize;
 
 const FALLBACK_WIDTH_RATIO: f32 = 0.6;
 
+#[derive(Clone, Copy)]
 pub(crate) struct CellMetrics {
     pub(crate) cell_width: Pixels,
     pub(crate) line_height: Pixels,

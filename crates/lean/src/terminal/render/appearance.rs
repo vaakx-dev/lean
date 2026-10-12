@@ -7,7 +7,7 @@ use crate::terminal::settings::{
     FONT_FAMILY, FONT_SIZE, LINE_HEIGHT, MAX_FONT_SIZE, MAX_LINE_HEIGHT, MIN_FONT_SIZE,
     MIN_LINE_HEIGHT,
 };
-use crate::theme::installed_font_names;
+use crate::theme::installed_font;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CursorAppearance {
@@ -16,6 +16,7 @@ pub(crate) enum CursorAppearance {
     Hidden,
 }
 
+#[derive(Clone)]
 pub(crate) struct TerminalAppearance {
     pub(crate) palette: Palette,
     pub(crate) font: Font,
@@ -25,13 +26,20 @@ pub(crate) struct TerminalAppearance {
 }
 
 impl TerminalAppearance {
-    pub(crate) fn new(cursor: CursorAppearance, cx: &mut App) -> Self {
+    pub(crate) fn resolve(cx: &mut App) -> Self {
         Self {
             font: font(font_family(cx)),
             font_size: font_size(cx),
             line_height: LINE_HEIGHT.get(cx).clamp(MIN_LINE_HEIGHT, MAX_LINE_HEIGHT),
             palette: Palette::new(cx.theme()),
+            cursor: CursorAppearance::Hidden,
+        }
+    }
+
+    pub(crate) fn with_cursor(&self, cursor: CursorAppearance) -> Self {
+        Self {
             cursor,
+            ..self.clone()
         }
     }
 
@@ -41,16 +49,10 @@ impl TerminalAppearance {
 }
 
 fn font_family(cx: &mut App) -> SharedString {
-    match FONT_FAMILY.get(cx) {
-        Some(name) if is_installed(&name, cx) => name.into(),
-        _ => editor_font_family(cx),
-    }
-}
-
-fn is_installed(name: &str, cx: &mut App) -> bool {
-    installed_font_names(cx)
-        .iter()
-        .any(|installed| installed == name)
+    FONT_FAMILY
+        .get(cx)
+        .and_then(|name| installed_font(&name, cx))
+        .unwrap_or_else(|| editor_font_family(cx))
 }
 
 fn font_size(cx: &App) -> Pixels {

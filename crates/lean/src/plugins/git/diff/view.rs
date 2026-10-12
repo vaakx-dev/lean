@@ -10,7 +10,7 @@ use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::*;
 
 use super::base::DiffBase;
-use super::blobs::{read_base, read_index, read_working};
+use super::blobs::{read_base, read_working};
 use crate::files::{Language, file_name};
 use crate::plugins::git::repo::RepoFile;
 use crate::plugins::git::settings::{DIFF_CONTEXT_LINES, diff_context_lines};
@@ -58,6 +58,10 @@ impl DiffView {
         })
     }
 
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
     pub(crate) fn title(&self) -> SharedString {
         format!("{} ({})", file_name(&self.path), self.base.title()).into()
     }
@@ -101,7 +105,7 @@ fn load_document(
     let old = read_base(&file, base)?;
     let new = match base {
         DiffBase::Index => read_working(path)?,
-        DiffBase::Staged => read_index(&file)?,
+        DiffBase::Head => read_base(&file, DiffBase::Index)?,
     };
     DiffDocument::build(old, new, Language::for_path(path).id(), context_lines)
 }

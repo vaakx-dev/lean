@@ -9,7 +9,7 @@ use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::{App, Window};
 
-use super::{FileAction, Plugin, PluginContext};
+use super::{FileAction, Plugin, Registry};
 use settings::{COMMAND, EXTENSIONS};
 
 pub(super) const PLUGIN: Plugin = Plugin {
@@ -27,8 +27,8 @@ const OPEN_IN_BROWSER: FileAction = FileAction {
     run: open_in_browser,
 };
 
-fn activate(context: &mut PluginContext, _: &mut App) {
-    context.register_file_action(OPEN_IN_BROWSER);
+fn activate(registry: &mut Registry, _: &mut App) {
+    registry.register_file_action(OPEN_IN_BROWSER);
 }
 
 fn has_browser_extension(path: &Path, cx: &App) -> bool {

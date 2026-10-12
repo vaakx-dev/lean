@@ -7,7 +7,7 @@ pub(crate) mod settings;
 
 use gpui_kit::{App, AppContext as _, KeyBinding, Window};
 
-use super::{AnyPanelView, Panel, Plugin, PluginContext, WorkspaceContext};
+use super::{AnyPanelView, Panel, Plugin, Registry, WorkspaceContext};
 use crate::app::actions::ShowPanel;
 use crate::app::keymap;
 use panel::SearchPanel;
@@ -27,8 +27,8 @@ const PANEL: Panel = Panel {
     build,
 };
 
-fn activate(context: &mut PluginContext, cx: &mut App) {
-    context.register_panel(PANEL);
+fn activate(registry: &mut Registry, cx: &mut App) {
+    registry.register_panel(PANEL);
     keymap::bind_command(
         cx,
         "lean::FindInFiles",

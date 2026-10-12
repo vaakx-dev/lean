@@ -3,10 +3,30 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use super::FsChanges;
-use super::disk_entry::DiskEntry;
 use super::filter::RawEvent;
 use super::skipped::SkippedFolders;
 use crate::project::IgnoreCache;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DiskEntry {
+    Missing,
+    File,
+    Folder,
+}
+
+impl DiskEntry {
+    pub(crate) fn listed(is_dir: bool) -> Self {
+        if is_dir { Self::Folder } else { Self::File }
+    }
+
+    fn of(path: &Path) -> Self {
+        match path.symlink_metadata() {
+            Err(_) => Self::Missing,
+            Ok(metadata) if metadata.is_symlink() => Self::listed(path.is_dir()),
+            Ok(metadata) => Self::listed(metadata.is_dir()),
+        }
+    }
+}
 
 pub(super) fn classify(
     events: Vec<RawEvent>,
@@ -85,7 +105,7 @@ impl<'a> IgnoredFolders<'a> {
         if let Some(ignored) = self.known.get(folder) {
             return *ignored;
         }
-        let ignored = self.ignore.is_ignored(folder);
+        let ignored = self.ignore.is_ignored_folder(folder);
         self.known.insert(folder.to_path_buf(), ignored);
         ignored
     }

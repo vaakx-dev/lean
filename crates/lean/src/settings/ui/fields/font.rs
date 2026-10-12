@@ -5,7 +5,7 @@ use gpui_kit::*;
 use super::field::Field;
 use super::text_value::TextValue;
 use crate::settings::Setting;
-use crate::theme::installed_font_names;
+use crate::theme::{installed_font, installed_font_names};
 
 type FontList = SearchableVec<SharedString>;
 
@@ -59,9 +59,8 @@ impl FontPicker {
         cx: &mut Context<Self>,
     ) -> Self {
         let fonts = installed_font_names(cx);
-        let selected = fonts
-            .iter()
-            .position(|font| *font == value)
+        let selected = installed_font(&value, cx)
+            .and_then(|font| fonts.iter().position(|name| *name == font))
             .map(|row| IndexPath::default().row(row));
         let list = SearchableVec::new(fonts.to_vec());
         let select = cx.new(|cx| SelectState::new(list, selected, window, cx).searchable(true));

@@ -125,17 +125,19 @@ impl Document {
             .to_lowercase()
     }
 
-    pub(crate) fn serialize(mut self) -> Result<String> {
+    pub(crate) fn serialize(mut self) -> String {
         let cells = self.cells.into_iter().map(cell_json).collect();
         self.fields.insert("cells".into(), Value::Array(cells));
         let mut document = Value::Object(self.fields);
         document.sort_all_objects();
         let mut bytes = Vec::new();
         let formatter = PrettyFormatter::with_indent(NBFORMAT_INDENT);
-        document.serialize(&mut Serializer::with_formatter(&mut bytes, formatter))?;
-        let mut content = String::from_utf8(bytes)?;
+        document
+            .serialize(&mut Serializer::with_formatter(&mut bytes, formatter))
+            .expect("a JSON value always serializes");
+        let mut content = String::from_utf8(bytes).expect("serde_json writes UTF-8");
         content.push('\n');
-        Ok(content)
+        content
     }
 }
 

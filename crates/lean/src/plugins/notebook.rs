@@ -5,6 +5,7 @@ mod editing;
 mod execution;
 mod kernel;
 mod keymap;
+mod loading;
 mod output;
 mod saved;
 pub(crate) mod settings;
@@ -16,21 +17,20 @@ mod viewer;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use anyhow::Result;
 use gpui_kit::*;
 use serde_json::{Map, Value};
 
-use super::{FileViewEvent, Plugin, PluginContext};
-use crate::editor::file_text::LineEnding;
+use super::{FileViewEvent, Plugin, Registry};
 use crate::toolchain::{Toolchains, ToolchainsEvent};
 use cell::{Cell, CellId};
 use cell_options::{CellFont, cell_font};
-use document::Document;
 use execution::Session;
 use keymap::bind_keys;
+use loading::LoadState;
+use output::release_outputs;
 use saved::SavedCell;
-use settings::SAVE_OUTPUTS;
 use status::KernelStatus;
 
 const LIST_OVERDRAW: Pixels = px(600.);
@@ -42,19 +42,19 @@ pub(super) const PLUGIN: Plugin = Plugin {
     activate,
 };
 
-fn activate(context: &mut PluginContext, cx: &mut App) {
+fn activate(registry: &mut Registry, cx: &mut App) {
     bind_keys(cx);
-    context.register_viewer(viewer::NOTEBOOK_VIEWER);
+    registry.register_viewer(viewer::NOTEBOOK_VIEWER);
 }
 
 pub(crate) struct Notebook {
     folder: PathBuf,
-    line_ending: LineEnding,
     language: String,
-    fields: Map<String, Value>,
+    fields: Arc<Map<String, Value>>,
     cells: Vec<Cell>,
     cell_font: CellFont,
-    saved: Vec<SavedCell>,
+    saved: Arc<[SavedCell]>,
+    load_state: LoadState,
     selected: Option<CellId>,
     next_cell_id: usize,
     toolchains: Entity<Toolchains>,
@@ -64,8 +64,10 @@ pub(crate) struct Notebook {
     queue: VecDeque<CellId>,
     focus_handle: FocusHandle,
     list_state: ListState,
+    _loading: Task<()>,
     _toolchains_subscription: Subscription,
     _quit_subscription: Subscription,
+    _release_subscription: Subscription,
     _settings: Vec<Subscription>,
 }
 
@@ -74,27 +76,28 @@ impl EventEmitter<FileViewEvent> for Notebook {}
 impl Notebook {
     fn new(
         folder: PathBuf,
-        document: Document,
-        line_ending: LineEnding,
         toolchains: Entity<Toolchains>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let language = document.language();
         let toolchains_subscription = cx
             .subscribe(&toolchains, |notebook, _, event: &ToolchainsEvent, cx| {
                 notebook.handle_toolchains_event(event, cx)
             });
         let quit_subscription = cx.on_app_quit(|notebook, _| notebook.kill_kernel());
+        let release_subscription = cx.on_release(|notebook, cx| {
+            let cells = std::mem::take(&mut notebook.cells);
+            release_outputs(cells.into_iter().flat_map(|cell| cell.outputs), cx);
+        });
         let setting_observers = Self::observe_settings(window, cx);
-        let mut notebook = Self {
+        Self {
             folder,
-            line_ending,
-            language,
-            fields: document.fields,
+            language: String::new(),
+            fields: Arc::default(),
             cells: Vec::new(),
             cell_font: cell_font(cx),
-            saved: Vec::new(),
+            saved: Arc::new([]),
+            load_state: LoadState::Loading,
             selected: None,
             next_cell_id: 0,
             toolchains,
@@ -104,33 +107,12 @@ impl Notebook {
             queue: VecDeque::new(),
             focus_handle: cx.focus_handle(),
             list_state: ListState::new(0, ListAlignment::Top, LIST_OVERDRAW),
+            _loading: Task::ready(()),
             _toolchains_subscription: toolchains_subscription,
             _quit_subscription: quit_subscription,
+            _release_subscription: release_subscription,
             _settings: setting_observers,
-        };
-        let cells = document
-            .cells
-            .into_iter()
-            .map(|data| notebook.create_cell(data, window, cx))
-            .collect();
-        notebook.cells = cells;
-        notebook.saved = notebook.saved_cells(cx);
-        notebook.splice_rows(0..0, 0..notebook.cells.len() + 1, cx);
-        notebook.selected = notebook.cells.first().map(|cell| cell.id);
-        notebook
-    }
-
-    fn content(&self, cx: &App) -> Result<String> {
-        let with_outputs = SAVE_OUTPUTS.get(cx);
-        Document {
-            cells: self
-                .cells
-                .iter()
-                .map(|cell| cell.to_data(with_outputs, cx))
-                .collect(),
-            fields: self.fields.clone(),
         }
-        .serialize()
     }
 
     fn cell(&self, id: CellId) -> Option<&Cell> {

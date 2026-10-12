@@ -41,8 +41,9 @@ impl Side {
     }
 
     pub(super) fn line(&self, line: usize, resolver: &dyn HighlightStyleResolver) -> SideLine {
-        let mut text = String::from(self.text.slice_line(line));
-        text.truncate(char_boundary_at_most(&text, MAX_LINE_BYTES));
+        let full_line = self.text.slice_line(line);
+        let shown_len = full_line.floor_char_boundary(full_line.len().min(MAX_LINE_BYTES));
+        let text = String::from(full_line.slice(..shown_len));
         let start = self.text.line_start_offset(line);
         let end = start + text.len();
         let styles = match &self.highlighter {
@@ -63,14 +64,4 @@ impl Side {
             styles,
         }
     }
-}
-
-fn char_boundary_at_most(text: &str, limit: usize) -> usize {
-    if text.len() <= limit {
-        return text.len();
-    }
-    (0..=limit)
-        .rev()
-        .find(|&index| text.is_char_boundary(index))
-        .unwrap_or(0)
 }

@@ -1,5 +1,4 @@
 mod classify;
-mod disk_entry;
 mod filter;
 mod folder_watch;
 mod health;
@@ -29,9 +28,9 @@ use shared_paths::SharedPaths;
 use skipped::SkippedFolders;
 use tree::WatchedTree;
 
-pub(crate) use disk_entry::DiskEntry;
+pub(crate) use classify::DiskEntry;
 pub(crate) use filter::is_noise;
-pub(crate) use folder_watch::FolderWatch;
+pub(crate) use folder_watch::{FolderWatch, reload_on_change};
 pub(crate) use metadata::MetadataWatch;
 
 pub(crate) const DEBOUNCE_MS: Setting<u64> = Setting::new("watcher.debounce_ms", 150);
@@ -60,9 +59,10 @@ impl FsChanges {
         }
     }
 
-    pub(crate) fn reconcile() -> Self {
+    pub(crate) fn reconcile(observed_at: Instant) -> Self {
         Self {
             rescan: true,
+            observed_at: Some(observed_at),
             ..Self::default()
         }
     }
@@ -95,24 +95,27 @@ pub(crate) struct FsWatcher {
 
 impl FsWatcher {
     pub(crate) fn start(root: PathBuf, ignore: IgnoreCache, cx: &mut Context<Project>) -> Self {
+        let started = Instant::now();
         let (sender, receiver) = mpsc::unbounded();
         let health = Health::default();
         let open_files = SharedPaths::default();
         let metadata = SharedMetadata::default();
+        let filter = EventFilter {
+            ignore: ignore.clone(),
+            metadata: metadata.clone(),
+            skipped: SkippedFolders::new(&root),
+            open_files: open_files.clone(),
+        };
+        let skipped = filter.skipped.clone();
         let tree = WatchedTree::new(
             root,
             ignore,
+            skipped.clone(),
             health.clone(),
             open_files.clone(),
             metadata.clone(),
         );
-        let skipped = tree.skipped().clone();
         let watched = tree.watched().clone();
-        let filter = EventFilter {
-            metadata: metadata.clone(),
-            skipped: skipped.clone(),
-            open_files: open_files.clone(),
-        };
         let event_sender = sender.clone();
         let requests = sender.clone();
         let watch_health = health.clone();
@@ -121,7 +124,7 @@ impl FsWatcher {
                 .background_spawn(async move { tree.start(filter, event_sender) })
                 .await;
             let reconcile = project.update(cx, |_, cx| {
-                cx.emit(FilesChanged(Rc::new(FsChanges::reconcile())))
+                cx.emit(FilesChanged(Rc::new(FsChanges::reconcile(started))))
             });
             if reconcile.is_err() {
                 return;
@@ -156,16 +159,12 @@ impl FsWatcher {
         if WATCH_EACH_FOLDER {
             return self.watched.contains(folder);
         }
-        let watched_root = self
+        let is_inside_root = self
             .watched
             .read()
             .iter()
-            .find(|root| folder.starts_with(root))
-            .cloned();
-        let Some(root) = watched_root else {
-            return false;
-        };
-        !self.skipped.contains_self_or_parent_of(folder) && !crosses_symlink(&root, folder)
+            .any(|root| folder.starts_with(root));
+        is_inside_root && !self.skipped.contains_self_or_parent_of(folder)
     }
 
     pub(crate) fn unwatched_folders(&self) -> HashSet<PathBuf> {
@@ -183,17 +182,6 @@ impl FsWatcher {
     pub(crate) fn request_rescan(&self) {
         self.requests.unbounded_send(RawEvent::rescan()).ok();
     }
-}
-
-fn crosses_symlink(root: &Path, folder: &Path) -> bool {
-    folder
-        .ancestors()
-        .take_while(|ancestor| *ancestor != root)
-        .any(|ancestor| {
-            ancestor
-                .symlink_metadata()
-                .is_ok_and(|metadata| metadata.file_type().is_symlink())
-        })
 }
 
 async fn forward_changes(

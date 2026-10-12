@@ -1,3 +1,4 @@
+mod file_type;
 mod icon;
 mod language;
 pub(crate) mod settings;

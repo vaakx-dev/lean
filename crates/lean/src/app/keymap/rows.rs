@@ -1,3 +1,5 @@
+use std::collections::{BTreeSet, HashMap};
+
 use gpui_kit::{App, SharedString};
 
 use super::names::{command_title, context_label};
@@ -33,16 +35,51 @@ pub(crate) fn rows(cx: &App) -> Vec<Row> {
     rows
 }
 
-pub(crate) fn conflicts(row: &Row, rows: &[Row]) -> Vec<SharedString> {
+pub(crate) struct Table {
+    pub(crate) rows: Vec<Row>,
+    pub(crate) conflicts: Vec<Vec<SharedString>>,
+}
+
+impl Table {
+    pub(crate) fn load(cx: &App) -> Self {
+        let rows = rows(cx);
+        let conflicts = conflicts(&rows);
+        Self { rows, conflicts }
+    }
+}
+
+fn conflicts(rows: &[Row]) -> Vec<Vec<SharedString>> {
+    let mut bound: HashMap<(&str, Option<&str>), Vec<usize>> = HashMap::new();
+    for (index, row) in rows.iter().enumerate().filter(|(_, row)| row.available) {
+        for binding in row.bindings() {
+            bound.entry(binding).or_default().push(index);
+        }
+    }
     rows.iter()
-        .filter(|other| other.id != row.id && other.available && overlaps(row, other))
-        .map(|other| other.title.clone())
+        .map(|row| {
+            let others: BTreeSet<usize> = row
+                .bindings()
+                .filter_map(|binding| bound.get(&binding))
+                .flatten()
+                .copied()
+                .filter(|&other| rows[other].id != row.id)
+                .collect();
+            others
+                .into_iter()
+                .map(|other| rows[other].title.clone())
+                .collect()
+        })
         .collect()
 }
 
-fn overlaps(row: &Row, other: &Row) -> bool {
-    row.keys.iter().any(|keys| other.keys.contains(keys))
-        && row.scopes.iter().any(|scope| other.scopes.contains(scope))
+impl Row {
+    fn bindings(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.keys.iter().flat_map(move |keys| {
+            self.scopes
+                .iter()
+                .map(move |scope| (keys.as_str(), scope.as_deref()))
+        })
+    }
 }
 
 fn command_row(command: &Command, entry: Option<&Override>) -> Row {

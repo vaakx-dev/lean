@@ -18,8 +18,12 @@ impl SearchPanel {
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
         let theme = cx.theme();
-        let line = self.results.files.get(file_index)?.lines.get(line_index)?;
-        let active = self.active_line == Some((file_index, line_index));
+        let file = self.results.files.get(file_index)?;
+        let line = file.lines.get(line_index)?;
+        let active = self
+            .active_line
+            .as_ref()
+            .is_some_and(|(path, active)| *active == line_index && *path == file.path);
         let highlight = HighlightStyle {
             background_color: Some(theme.yellow.opacity(0.35)),
             ..HighlightStyle::default()
@@ -67,7 +71,7 @@ impl SearchPanel {
             line: line.line,
             column: line.column,
         };
-        self.active_line = Some((file_index, line_index));
+        self.active_line = Some((file.path.clone(), line_index));
         cx.emit(event);
         cx.notify();
     }

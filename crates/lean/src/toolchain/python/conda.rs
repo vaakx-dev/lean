@@ -1,5 +1,7 @@
+#[cfg(feature = "terminal")]
 mod activation;
 mod condarc;
+#[cfg(feature = "terminal")]
 mod executable;
 mod locations;
 
@@ -32,9 +34,9 @@ const PYTHON_DIR: &str = "bin";
 #[cfg(windows)]
 const PYTHON_DIR: &str = "";
 
-pub(super) fn discover(project_root: &Path, search_paths: &[PathBuf]) -> Vec<Toolchain> {
+pub(super) fn discover(project_root: &Path, searched: &[PathBuf]) -> Vec<Toolchain> {
     let mut seen = HashSet::new();
-    locations::candidate_prefixes(project_root, search_paths)
+    locations::candidate_prefixes(project_root, searched)
         .into_iter()
         .filter_map(|prefix| dunce::canonicalize(prefix).ok())
         .filter(|prefix| seen.insert(prefix.clone()))
@@ -62,6 +64,7 @@ fn read_environment(prefix: PathBuf) -> Option<Toolchain> {
             (PREFIX_VARIABLE.to_owned(), path_string(&prefix)),
             ("CONDA_DEFAULT_ENV".to_owned(), name),
         ],
+        #[cfg(feature = "terminal")]
         activation: executable::conda_executable(&prefix)
             .map(|conda| activation::activation(&conda, &prefix)),
         is_inherited: is_inherited(PREFIX_VARIABLE, &prefix),

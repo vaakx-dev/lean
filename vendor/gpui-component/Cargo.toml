@@ -51,6 +51,7 @@ speech = [
     "dep:objc2-speech",
     "dep:objc2-avf-audio",
     "dep:objc2-av-foundation",
+    "dep:windows-future",
     "objc2-foundation/NSBundle",
     "objc2-foundation/NSDictionary",
     "objc2-foundation/NSError",
@@ -250,34 +251,6 @@ tree-sitter-zig = [
 name = "gpui_component"
 path = "src/lib.rs"
 doctest = false
-
-[[test]]
-name = "base_compat"
-path = "tests/base_compat.rs"
-
-[[test]]
-name = "controlled_change_callbacks"
-path = "tests/controlled_change_callbacks.rs"
-
-[[test]]
-name = "legacy_button_compat"
-path = "tests/legacy_button_compat.rs"
-
-[[test]]
-name = "legacy_controls_compat"
-path = "tests/legacy_controls_compat.rs"
-
-[[test]]
-name = "legacy_language_config_compat"
-path = "tests/legacy_language_config_compat.rs"
-
-[[test]]
-name = "table_dump_range"
-path = "tests/table_dump_range.rs"
-
-[[test]]
-name = "theme_compat"
-path = "tests/theme_compat.rs"
 
 [dependencies.anyhow]
 version = "1"
@@ -607,7 +580,7 @@ version = "0.6.2"
 version = "0.46.0"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows]
-version = "0.58.0"
+version = "0.62"
 features = [
     "Wdk",
     "Wdk_System",
@@ -622,6 +595,10 @@ features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ]
+
+[target.'cfg(target_os = "windows")'.dependencies.windows-future]
+version = "0.3"
+optional = true
 
 [lints.clippy]
 almost_complete_range = "allow"

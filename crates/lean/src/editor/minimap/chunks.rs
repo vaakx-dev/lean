@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ops::Range;
-use std::rc::Rc;
 
 use gpui_kit::Hsla;
 use gpui_kit::component::input::EditorState;
@@ -13,7 +12,7 @@ const MAX_CHUNKS: usize = 16;
 
 struct Chunk {
     version: u64,
-    rows: Rc<Rows>,
+    rows: Rows,
 }
 
 pub(super) struct ChunkJob {
@@ -57,11 +56,8 @@ pub(super) struct Chunks {
 }
 
 impl Chunks {
-    pub(super) fn rows(&self) -> Vec<Rc<Rows>> {
-        self.chunks
-            .values()
-            .map(|chunk| chunk.rows.clone())
-            .collect()
+    pub(super) fn rows(&self) -> impl Iterator<Item = &Rows> {
+        self.chunks.values().map(|chunk| &chunk.rows)
     }
 
     pub(super) fn has_missing(&self, lines: &Range<usize>) -> bool {
@@ -81,13 +77,10 @@ impl Chunks {
     pub(super) fn insert(&mut self, built: BuiltChunks, visible: &Range<usize>) -> bool {
         let mut visible_changed = false;
         for (index, rows) in built.chunks {
-            let rows = match self.chunks.remove(&index) {
-                Some(old) if *old.rows == rows => old.rows,
-                _ => {
-                    visible_changed |= chunk_indices(visible).contains(&index);
-                    Rc::new(rows)
-                }
-            };
+            let unchanged = self.chunks.get(&index).is_some_and(|old| old.rows == rows);
+            if !unchanged {
+                visible_changed |= chunk_indices(visible).contains(&index);
+            }
             let version = built.version;
             self.chunks.insert(index, Chunk { version, rows });
         }

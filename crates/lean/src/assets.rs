@@ -6,12 +6,10 @@ use gpui_kit::{AssetSource, SharedString};
 
 pub(crate) struct Assets;
 
-#[derive(rust_embed::RustEmbed)]
-#[folder = "../../assets"]
-#[include = "images/**/*"]
-#[include = "icons/**/*"]
-#[include = "themes/**/*"]
-struct LeanAssets;
+pub(crate) const BUNDLED_THEME: &str = include_str!("../../../assets/themes/lean-dark.json");
+
+const LOGO_PATH: &str = "images/lean.png";
+const LOGO: &[u8] = include_bytes!("../../../assets/images/lean.png");
 
 icon_assets!(
     ExtraIcons,
@@ -32,7 +30,6 @@ icon_assets!(
         FolderPlus,
         FolderTree,
         GitBranch,
-        GitCompare,
         Image,
         Keyboard,
         List,
@@ -44,7 +41,6 @@ icon_assets!(
         Puzzle,
         Regex,
         RotateCcw,
-        TextSearch,
         Trash,
         WholeWord,
         Wrench,
@@ -56,8 +52,8 @@ icon_assets!(
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        if let Some(file) = LeanAssets::get(path) {
-            return Ok(Some(file.data));
+        if path == LOGO_PATH {
+            return Ok(Some(Cow::Borrowed(LOGO)));
         }
         if let Some(icon) = ExtraIcons.load(path)? {
             return Ok(Some(icon));
@@ -66,17 +62,11 @@ impl AssetSource for Assets {
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        let mut paths: Vec<SharedString> = LeanAssets::iter()
-            .filter(|file| file.starts_with(path))
-            .map(SharedString::from)
-            .collect();
-        paths.extend(ExtraIcons.list(path)?);
+        let mut paths = ExtraIcons.list(path)?;
         paths.extend(gpui_kit::assets::Assets.list(path)?);
+        if LOGO_PATH.starts_with(path) {
+            paths.push(LOGO_PATH.into());
+        }
         Ok(paths)
     }
-}
-
-pub(crate) fn load_string(path: &str) -> Result<String> {
-    let file = LeanAssets::get(path).ok_or_else(|| anyhow::anyhow!("missing asset {path}"))?;
-    Ok(String::from_utf8(file.data.into_owned())?)
 }

@@ -40,32 +40,10 @@ impl Content {
 pub(super) fn read_base(file: &RepoFile, base: DiffBase) -> Result<Content> {
     let repository = &file.repository;
     let blob = match base {
-        DiffBase::Staged => head_blob(repository, &file.relative_path)?,
-        DiffBase::Index => index_blob(repository, &file.relative_path)?,
+        DiffBase::Head => head_blob(repository, &file.relative_path)?,
+        DiffBase::Index => index_blob(repository, &repository.index()?, &file.relative_path)?,
     };
     Ok(blob_content(blob))
-}
-
-pub(super) fn read_index(file: &RepoFile) -> Result<Content> {
-    Ok(blob_content(index_blob(
-        &file.repository,
-        &file.relative_path,
-    )?))
-}
-
-pub(super) fn is_in_index(file: &RepoFile) -> Result<bool> {
-    let index = file.repository.index()?;
-    Ok(index
-        .get_path(&file.relative_path, 0)
-        .is_some_and(|entry| entry.mode != GITLINK_MODE))
-}
-
-fn blob_content(blob: Option<git2::Blob<'_>>) -> Content {
-    match blob {
-        Some(blob) if blob.is_binary() => Content::Binary,
-        Some(blob) => Content::decode(blob.content().to_vec()),
-        None => Content::Missing,
-    }
 }
 
 pub(super) fn read_working(path: &Path) -> Result<Content> {
@@ -76,7 +54,32 @@ pub(super) fn read_working(path: &Path) -> Result<Content> {
     }
 }
 
-fn head_blob<'repo>(
+pub(super) fn blob_content(blob: Option<git2::Blob<'_>>) -> Content {
+    match blob {
+        Some(blob) if blob.is_binary() => Content::Binary,
+        Some(blob) => Content::decode(blob.content().to_vec()),
+        None => Content::Missing,
+    }
+}
+
+pub(super) fn index_entry(index: &git2::Index, path: &Path) -> Option<git2::IndexEntry> {
+    index
+        .get_path(path, 0)
+        .filter(|entry| entry.mode != GITLINK_MODE)
+}
+
+pub(super) fn index_blob<'repo>(
+    repository: &'repo git2::Repository,
+    index: &git2::Index,
+    path: &Path,
+) -> Result<Option<git2::Blob<'repo>>> {
+    match index_entry(index, path) {
+        Some(entry) => Ok(Some(repository.find_blob(entry.id)?)),
+        None => Ok(None),
+    }
+}
+
+pub(super) fn head_blob<'repo>(
     repository: &'repo git2::Repository,
     path: &Path,
 ) -> Result<Option<git2::Blob<'repo>>> {
@@ -92,15 +95,4 @@ fn head_blob<'repo>(
         return Ok(None);
     }
     Ok(Some(repository.find_blob(entry.id())?))
-}
-
-fn index_blob<'repo>(
-    repository: &'repo git2::Repository,
-    path: &Path,
-) -> Result<Option<git2::Blob<'repo>>> {
-    let index = repository.index()?;
-    match index.get_path(path, 0) {
-        Some(entry) if entry.mode != GITLINK_MODE => Ok(Some(repository.find_blob(entry.id)?)),
-        _ => Ok(None),
-    }
 }

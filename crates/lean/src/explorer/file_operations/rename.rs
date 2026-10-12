@@ -39,12 +39,9 @@ impl Explorer {
             .iter()
             .filter_map(|folder| moved_path(folder, &from, &to))
             .collect();
-        self.expanded.retain(|folder| !folder.starts_with(&from));
-        self.children.retain(|folder, _| !folder.starts_with(&from));
+        self.forget_subtrees(&[&from]);
         self.expanded.extend(moved_folders.iter().cloned());
-        for folder in moved_folders {
-            self.load_directory(folder, window, cx);
-        }
+        self.load_directories(moved_folders, window, cx);
         if let Some(folder) = to.parent().map(Path::to_path_buf) {
             self.finish_file_operation(folder, Some(to.clone()), window, cx);
         }

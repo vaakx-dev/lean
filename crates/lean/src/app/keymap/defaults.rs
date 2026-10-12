@@ -6,7 +6,7 @@ use crate::app::actions::{
     SaveActiveEditor, ShowPanel, ToggleSidebar, ToggleTerminal,
 };
 use crate::editor::settings::font::{DecreaseFontSize, IncreaseFontSize, ResetFontSize};
-use crate::{explorer, terminal};
+use crate::explorer;
 
 actions!(editor, [GoToLine]);
 actions!(explorer, [RevealActiveFile]);
@@ -48,5 +48,6 @@ pub(super) fn bind(cx: &mut App) {
         )],
     );
     explorer::bind_keys(cx);
-    terminal::bind_keys(cx);
+    #[cfg(feature = "terminal")]
+    crate::terminal::bind_keys(cx);
 }

@@ -83,12 +83,19 @@ impl TerminalView {
         }
     }
 
-    fn grid_point(&self, position: Point<Pixels>, session: &TerminalSession) -> (GridPoint, Side) {
-        let size = session.size();
+    pub(in crate::terminal) fn viewport_point(
+        &self,
+        position: Point<Pixels>,
+        size: &GridSize,
+    ) -> (GridPoint<usize>, Side) {
         let offset = position - self.grid_origin.get();
-        let (column, side) = column_at(offset.x, &size);
+        let (column, side) = column_at(offset.x, size);
         let line = cell_index(offset.y / size.line_height, size.lines);
-        let viewport = GridPoint::new(line, Column(column));
+        (GridPoint::new(line, Column(column)), side)
+    }
+
+    fn grid_point(&self, position: Point<Pixels>, session: &TerminalSession) -> (GridPoint, Side) {
+        let (viewport, side) = self.viewport_point(position, &session.size());
         (viewport_to_point(session.display_offset(), viewport), side)
     }
 }

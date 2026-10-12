@@ -9,7 +9,7 @@ use gpui_kit::*;
 use super::capture::{TableState, Target};
 use super::keys::sequence_label;
 use super::row::{ACTIONS_WIDTH, CONTEXT_WIDTH, KEYS_WIDTH, SOURCE_WIDTH, render_row};
-use crate::app::keymap::{KEYMAP, Row, conflicts, rows};
+use crate::app::keymap::{KEYMAP, Row, rows};
 
 const STATE_KEY: &str = "keybindings-table";
 
@@ -36,14 +36,10 @@ fn search_keywords(cx: &App) -> Vec<SharedString> {
 fn render_table(window: &mut Window, cx: &mut App) -> Div {
     let state = window.use_keyed_state(STATE_KEY, cx, TableState::new);
     let cx: &App = cx;
+    let table = &state.read(cx).table;
     let query = state.read(cx).search.read(cx).value().trim().to_lowercase();
-    let all_rows = rows(cx);
-    let row_conflicts: Vec<Vec<SharedString>> = all_rows
-        .iter()
-        .map(|row| conflicts(row, &all_rows))
-        .collect();
-    let visible: Vec<usize> = (0..all_rows.len())
-        .filter(|&index| matches_query(&all_rows[index], &query))
+    let visible: Vec<usize> = (0..table.rows.len())
+        .filter(|&index| matches_query(&table.rows[index], &query))
         .collect();
     v_flex()
         .w_full()
@@ -58,16 +54,14 @@ fn render_table(window: &mut Window, cx: &mut App) -> Div {
                 .border_color(cx.theme().border)
                 .bg(cx.theme().table)
                 .child(header(cx))
-                .children(
-                    visible.iter().map(|&index| {
-                        render_row(&all_rows[index], &row_conflicts[index], &state, cx)
-                    }),
-                )
+                .children(visible.iter().map(|&index| {
+                    render_row(&table.rows[index], &table.conflicts[index], &state, cx)
+                }))
                 .when(visible.is_empty(), |table| {
                     table.child(empty_state(&query, cx))
                 }),
         )
-        .child(summary(&all_rows, &row_conflicts, cx))
+        .child(summary(&table.rows, &table.conflicts, cx))
 }
 
 fn toolbar(state: &Entity<TableState>, cx: &App) -> Div {

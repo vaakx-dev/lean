@@ -51,14 +51,16 @@ impl Explorer {
             .take_while(|folder| folder.starts_with(&self.root))
             .map(Path::to_path_buf)
             .collect();
+        let mut unloaded = Vec::new();
         for folder in folders {
             if folder != self.root {
                 self.expanded.insert(folder.clone());
             }
             if !self.children.contains_key(&folder) {
-                self.load_directory(folder, window, cx);
+                unloaded.push(folder);
             }
         }
+        self.load_directories(unloaded, window, cx);
         self.selected = Some(path.clone());
         self.pending_reveal = Some(path);
         self.rebuild_visible();
@@ -73,7 +75,7 @@ impl Explorer {
         let index = self
             .visible
             .iter()
-            .position(|entry| !entry.is_draft && &entry.path == path);
+            .position(|entry| !entry.is_draft && *entry.path == **path);
         if let Some(index) = index {
             self.scroll_handle
                 .scroll_to_item(index, ScrollStrategy::Nearest);

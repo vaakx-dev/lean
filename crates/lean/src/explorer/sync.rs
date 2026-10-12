@@ -1,7 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{App, Context, Window};
+use gpui_kit::{Context, Window};
 
 use super::Explorer;
 use super::settings::GitIgnored;
@@ -14,39 +14,87 @@ impl Explorer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        for folder in self.folders_to_reload(changes, cx) {
-            self.load_directory(folder, window, cx);
+        if changes.rescan {
+            if !self.has_read_since(changes) {
+                self.reload_all(window, cx);
+            }
+            return;
         }
+        let folders = self.folders_with_changed_entries(changes);
+        let listed = self.listed_ignored_paths(changes);
+        if listed.is_empty() {
+            self.load_directories(folders.into_iter().collect(), window, cx);
+            return;
+        }
+        let presence = self.project.read(cx).changed_presence(listed, cx);
+        cx.spawn_in(window, async move |explorer, cx| {
+            let mut folders = folders;
+            let changed = presence.await;
+            folders.extend(
+                changed
+                    .iter()
+                    .filter_map(|path| path.parent().map(Path::to_path_buf)),
+            );
+            explorer
+                .update_in(cx, |explorer, window, cx| {
+                    explorer.load_directories(folders.into_iter().collect(), window, cx)
+                })
+                .ok();
+        })
+        .detach();
     }
 
-    fn folders_to_reload(&self, changes: &FsChanges, cx: &App) -> HashSet<PathBuf> {
-        if changes.rescan {
-            return std::iter::once(&self.root)
-                .chain(&self.expanded)
-                .chain(self.children.keys())
-                .cloned()
-                .collect();
-        }
+    fn has_read_since(&self, changes: &FsChanges) -> bool {
+        changes
+            .observed_at
+            .is_some_and(|observed| self.opened_at > observed)
+    }
+
+    fn reload_all(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let root = self.root.clone();
+        let expanded = &self.expanded;
+        self.children
+            .retain(|folder, _| *folder == root || expanded.contains(folder));
+        let folders = std::iter::once(root)
+            .chain(self.expanded.iter().cloned())
+            .collect();
+        self.load_directories(folders, window, cx);
+    }
+
+    fn folders_with_changed_entries(&self, changes: &FsChanges) -> HashSet<PathBuf> {
         let mut folders = HashSet::new();
+        let mut by_parent: HashMap<&Path, Vec<(&Path, DiskEntry)>> = HashMap::new();
         for (path, entry) in &changes.structural {
             if self.is_tracked_folder(path) {
                 folders.insert(path.clone());
             }
-            if let Some(parent) = path.parent()
-                && self.is_tracked_folder(parent)
-                && self.listed_entry(parent, path) != *entry
+            if let Some(parent) = path
+                .parent()
+                .filter(|parent| self.is_tracked_folder(parent))
             {
-                folders.insert(parent.to_path_buf());
+                by_parent
+                    .entry(parent)
+                    .or_default()
+                    .push((path.as_path(), *entry));
             }
         }
-        if self.options.git_ignored != GitIgnored::Hide {
-            folders.extend(self.folders_with_changed_ignored(changes, cx));
+        for (parent, changed) in by_parent {
+            let listing = self.listing(parent);
+            let differs = changed
+                .iter()
+                .any(|(path, entry)| listed_entry(&listing, path) != *entry);
+            if differs {
+                folders.insert(parent.to_path_buf());
+            }
         }
         folders
     }
 
-    fn folders_with_changed_ignored(&self, changes: &FsChanges, cx: &App) -> Vec<PathBuf> {
-        let project = self.project.read(cx);
+    fn listed_ignored_paths(&self, changes: &FsChanges) -> Vec<(PathBuf, bool)> {
+        if self.options.git_ignored == GitIgnored::Hide {
+            return Vec::new();
+        }
+        let mut listings: HashMap<&Path, HashMap<&Path, DiskEntry>> = HashMap::new();
         changes
             .ignored
             .iter()
@@ -54,21 +102,29 @@ impl Explorer {
                 let parent = path
                     .parent()
                     .filter(|parent| self.children.contains_key(*parent))?;
-                let is_listed = self.listed_entry(parent, path) != DiskEntry::Missing;
-                let exists = path.symlink_metadata().is_ok();
-                (is_listed != exists && !project.is_excluded(path)).then(|| parent.to_path_buf())
+                let listing = listings
+                    .entry(parent)
+                    .or_insert_with(|| self.listing(parent));
+                let is_listed = listed_entry(listing, path) != DiskEntry::Missing;
+                Some((path.clone(), is_listed))
             })
             .collect()
     }
 
-    fn listed_entry(&self, folder: &Path, path: &Path) -> DiskEntry {
+    fn listing(&self, folder: &Path) -> HashMap<&Path, DiskEntry> {
         self.children
             .get(folder)
-            .and_then(|children| children.iter().find(|child| child.path == path))
-            .map_or(DiskEntry::Missing, |child| DiskEntry::listed(child.is_dir))
+            .into_iter()
+            .flatten()
+            .map(|child| (&*child.path, DiskEntry::listed(child.is_dir)))
+            .collect()
     }
 
     fn is_tracked_folder(&self, path: &Path) -> bool {
         path == self.root || self.expanded.contains(path) || self.children.contains_key(path)
     }
+}
+
+fn listed_entry(listing: &HashMap<&Path, DiskEntry>, path: &Path) -> DiskEntry {
+    listing.get(path).copied().unwrap_or(DiskEntry::Missing)
 }

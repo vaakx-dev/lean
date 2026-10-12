@@ -40,16 +40,27 @@ impl DiscoveryOptions {
 }
 
 pub(super) fn discover(project_root: &Path, options: &DiscoveryOptions) -> Vec<Toolchain> {
+    let searched = search_candidates(&options.search_paths);
     let mut toolchains = venv::discover(project_root, options.venv_depth);
     toolchains.extend(venv::discover_inherited());
-    for folder in &options.search_paths {
-        toolchains.extend(venv::discover(folder, 1));
-    }
-    toolchains.extend(conda::discover(project_root, &options.search_paths));
+    toolchains.extend(venv::read_all(&searched));
+    toolchains.extend(conda::discover(project_root, &searched));
     toolchains.extend(pyenv::discover(options.pyenv_root.as_deref()));
     let mut seen = HashSet::new();
     toolchains.retain(|toolchain| seen.insert(toolchain.prefix.clone()));
     toolchains
+}
+
+fn search_candidates(search_paths: &[PathBuf]) -> Vec<PathBuf> {
+    search_paths
+        .iter()
+        .flat_map(|folder| {
+            let mut candidates = vec![folder.clone()];
+            candidates.extend(child_dirs(folder));
+            candidates.extend(child_dirs(&folder.join("envs")));
+            candidates
+        })
+        .collect()
 }
 
 fn resolve(path: &str, project_root: &Path) -> PathBuf {
@@ -82,8 +93,11 @@ fn child_dirs(path: &Path) -> Vec<PathBuf> {
     };
     let mut dirs: Vec<PathBuf> = entries
         .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
+        .filter_map(|entry| {
+            let file_type = entry.file_type().ok()?;
+            let path = entry.path();
+            (file_type.is_dir() || (file_type.is_symlink() && path.is_dir())).then_some(path)
+        })
         .collect();
     dirs.sort();
     dirs

@@ -3678,7 +3678,7 @@ impl<M: InputModeKind> InputBaseState<M> {
     ///
     /// `edits` are `(byte range in the current pre-edit document, replacement)`
     /// pairs.
-    pub(crate) fn replace_text_in_ranges(
+    pub fn replace_text_in_ranges(
         &mut self,
         edits: &[(Range<usize>, String)],
         window: &mut Window,

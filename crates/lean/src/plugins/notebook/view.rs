@@ -1,12 +1,13 @@
+use gpui_kit::component::alert::Alert;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::cell_options::cell_font;
 use super::document::CellKind;
 use super::keymap::{KEY_CONTEXT, bind_actions};
+use super::loading::LoadState;
 use super::{KernelStatus, Notebook};
 
 const INSERTER_GROUP: &str = "notebook-inserter";
@@ -71,45 +72,19 @@ impl Notebook {
         div().pr_4().child(row).into_any_element()
     }
 
-    fn render_kernel_error(&self, cx: &Context<Self>) -> Option<Div> {
+    fn render_kernel_error(&self) -> Option<Alert> {
         let KernelStatus::Failed(error) = self.kernel_status() else {
             return None;
         };
-        let theme = cx.theme();
         Some(
-            h_flex()
-                .flex_shrink_0()
-                .items_start()
-                .gap_2()
-                .px_3()
-                .py_2()
-                .border_b_1()
-                .border_color(theme.border)
-                .bg(theme.danger.opacity(0.08))
-                .text_sm()
-                .child(
-                    Icon::empty()
-                        .path("icons/circle-x.svg")
-                        .size_4()
-                        .mt_0p5()
-                        .text_color(theme.danger),
-                )
-                .child(div().flex_1().min_w_0().child(error)),
+            Alert::error("kernel-error", error)
+                .banner()
+                .small()
+                .flex_shrink_0(),
         )
     }
-}
 
-impl Render for Notebook {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.cell_font = cell_font(cx);
-        let cx: &Context<Self> = cx;
-        let theme = cx.theme();
-        let root = v_flex()
-            .id("notebook")
-            .key_context(KEY_CONTEXT)
-            .track_focus(&self.focus_handle)
-            .size_full()
-            .bg(theme.background);
+    fn render_cells(&self, cx: &Context<Self>) -> Div {
         let rows = list(
             self.list_state.clone(),
             cx.processor(|notebook, index: usize, window, cx| {
@@ -119,16 +94,34 @@ impl Render for Notebook {
         .size_full()
         .pt_2()
         .pb(px(160.));
-        bind_actions(root, cx)
-            .child(self.render_toolbar(cx))
-            .children(self.render_kernel_error(cx))
-            .child(
-                div()
-                    .relative()
-                    .flex_1()
-                    .min_h_0()
-                    .child(rows)
-                    .vertical_scrollbar(&self.list_state),
-            )
+        div()
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .child(rows)
+            .vertical_scrollbar(&self.list_state)
+    }
+}
+
+impl Render for Notebook {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let cx: &Context<Self> = cx;
+        let root = v_flex()
+            .id("notebook")
+            .key_context(KEY_CONTEXT)
+            .track_focus(&self.focus_handle)
+            .size_full()
+            .bg(cx.theme().background);
+        let root = bind_actions(root, cx);
+        match &self.load_state {
+            LoadState::Loading => root,
+            LoadState::Failed(error) => root.child(div().p_4().child(
+                Alert::error("load-error", error.clone()).title("This notebook can't be opened"),
+            )),
+            LoadState::Loaded(_) => root
+                .child(self.render_toolbar(cx))
+                .children(self.render_kernel_error())
+                .child(self.render_cells(cx)),
+        }
     }
 }

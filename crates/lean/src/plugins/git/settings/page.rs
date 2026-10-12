@@ -105,7 +105,7 @@ fn indicators_group() -> SettingGroup {
                 "The version that change markers are measured against.",
                 [
                     (DiffBase::Index, "Staged version (index)"),
-                    (DiffBase::Staged, "Last commit (HEAD)"),
+                    (DiffBase::Head, "Last commit (HEAD)"),
                 ],
             )
             .keywords(["gutter", "diff", "index", "head"])

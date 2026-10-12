@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Result;
 use gpui_kit::{App, AppContext as _, SharedString, Task};
@@ -6,19 +7,41 @@ use gpui_kit::{App, AppContext as _, SharedString, Task};
 use super::IgnoreCache;
 
 pub(crate) struct DirectoryEntry {
-    pub(crate) path: PathBuf,
+    pub(crate) path: Arc<Path>,
     pub(crate) name: SharedString,
     pub(crate) is_dir: bool,
+    pub(crate) is_symlink: bool,
     pub(crate) is_ignored: bool,
 }
 
-pub(super) fn read_directory(
-    path: &Path,
+pub(super) fn read_directories(
+    folders: Vec<PathBuf>,
     ignore: IgnoreCache,
     cx: &App,
-) -> Task<Result<Vec<DirectoryEntry>>> {
-    let path = path.to_path_buf();
-    cx.background_spawn(async move { list_directory(&path, &ignore) })
+) -> Task<Vec<Result<Vec<DirectoryEntry>>>> {
+    cx.background_spawn(async move {
+        folders
+            .iter()
+            .map(|folder| list_directory(folder, &ignore))
+            .collect()
+    })
+}
+
+pub(super) fn changed_presence(
+    listed: Vec<(PathBuf, bool)>,
+    ignore: IgnoreCache,
+    cx: &App,
+) -> Task<Vec<PathBuf>> {
+    cx.background_spawn(async move {
+        listed
+            .into_iter()
+            .filter(|(path, is_listed)| {
+                let exists = path.symlink_metadata().is_ok();
+                exists != *is_listed && !ignore.is_excluded(path, exists && path.is_dir())
+            })
+            .map(|(path, _)| path)
+            .collect()
+    })
 }
 
 fn list_directory(path: &Path, ignore: &IgnoreCache) -> Result<Vec<DirectoryEntry>> {
@@ -26,23 +49,25 @@ fn list_directory(path: &Path, ignore: &IgnoreCache) -> Result<Vec<DirectoryEntr
     for entry in std::fs::read_dir(path)? {
         let entry = entry?;
         let entry_path = entry.path();
-        let is_dir = entry
-            .file_type()
-            .map(|file_type| file_type.is_dir() || (file_type.is_symlink() && entry_path.is_dir()))
-            .unwrap_or_else(|error| {
+        let (is_dir, is_symlink) = match entry.file_type() {
+            Ok(file_type) if file_type.is_symlink() => (entry_path.is_dir(), true),
+            Ok(file_type) => (file_type.is_dir(), false),
+            Err(error) => {
                 log::debug!(
                     "failed to read file type of {}: {error}",
                     entry_path.display()
                 );
-                false
-            });
+                (false, false)
+            }
+        };
         if ignore.is_excluded(&entry_path, is_dir) {
             continue;
         }
         entries.push(DirectoryEntry {
-            path: entry_path,
+            path: entry_path.into(),
             name: entry.file_name().to_string_lossy().into_owned().into(),
             is_dir,
+            is_symlink,
             is_ignored: false,
         });
     }

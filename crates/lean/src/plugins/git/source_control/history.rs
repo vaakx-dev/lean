@@ -3,33 +3,40 @@ mod graph;
 mod graph_paint;
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::plugins::git::repo::CommitSummary;
 use graph::{GraphRow, build_graph};
 
-pub(super) struct HistoryEntry {
-    commit: CommitSummary,
-    graph: Rc<GraphRow>,
-}
-
 #[derive(Default)]
 pub(super) struct History {
-    pub(super) entries: Vec<HistoryEntry>,
+    commits: Arc<[CommitSummary]>,
+    graph: Vec<Rc<GraphRow>>,
     lanes: usize,
 }
 
 impl History {
-    pub(super) fn build(commits: &[CommitSummary]) -> Self {
-        let (graph_rows, lanes) = build_graph(commits);
-        let entries = commits
-            .iter()
-            .cloned()
-            .zip(graph_rows)
-            .map(|(commit, graph)| HistoryEntry {
-                commit,
-                graph: Rc::new(graph),
-            })
-            .collect();
-        Self { entries, lanes }
+    pub(super) fn update(&mut self, commits: &Arc<[CommitSummary]>) {
+        if Arc::ptr_eq(&self.commits, commits) {
+            return;
+        }
+        let (graph, lanes) = build_graph(commits);
+        *self = Self {
+            commits: Arc::clone(commits),
+            graph: graph.into_iter().map(Rc::new).collect(),
+            lanes,
+        };
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.commits.len()
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.commits.is_empty()
+    }
+
+    fn entry(&self, index: usize) -> Option<(&CommitSummary, &Rc<GraphRow>)> {
+        Some((self.commits.get(index)?, self.graph.get(index)?))
     }
 }

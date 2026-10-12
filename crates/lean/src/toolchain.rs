@@ -3,6 +3,7 @@ mod auto_refresh;
 mod picker;
 mod python;
 pub(crate) mod settings;
+#[cfg(feature = "terminal")]
 mod shell_activation;
 mod store;
 mod toolchains;
@@ -11,6 +12,7 @@ use std::path::PathBuf;
 
 use gpui_kit::SharedString;
 
+#[cfg(feature = "terminal")]
 use shell_activation::ShellActivation;
 
 pub(crate) use picker::toolchain_picker;
@@ -26,6 +28,7 @@ pub(crate) struct Toolchain {
     pub(crate) prefix: PathBuf,
     pub(crate) bin_dirs: Vec<PathBuf>,
     pub(crate) variables: Vec<(String, String)>,
+    #[cfg(feature = "terminal")]
     pub(crate) activation: Option<ShellActivation>,
     pub(crate) is_inherited: bool,
 }

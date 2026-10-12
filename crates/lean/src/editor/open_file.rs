@@ -127,7 +127,7 @@ impl EditorArea {
                 }
                 cx.emit(EditorAreaEvent::FileEdited(file.path.clone()));
             }
-            FileViewEvent::StatusChanged => cx.emit(EditorAreaEvent::ActiveEditorChanged),
+            FileViewEvent::StatusChanged => cx.emit(EditorAreaEvent::StatusChanged),
         }
     }
 }

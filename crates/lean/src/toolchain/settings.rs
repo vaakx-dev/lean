@@ -1,6 +1,6 @@
 use gpui_kit::App;
 use gpui_kit::component::Icon;
-use gpui_kit::component::setting::SettingPage;
+use gpui_kit::component::setting::{SettingGroup, SettingPage};
 use serde::{Deserialize, Serialize};
 
 use crate::settings::Setting;
@@ -10,8 +10,10 @@ pub(crate) const MAX_VENV_SEARCH_DEPTH: u32 = 4;
 
 pub(crate) const DEFAULT_INTERPRETER: Setting<DefaultInterpreter> =
     Setting::new("python.default_interpreter", DefaultInterpreter::Project);
+#[cfg(feature = "terminal")]
 pub(crate) const ACTIVATE_IN_TERMINAL: Setting<bool> =
     Setting::new("python.activate_in_terminal", true);
+#[cfg(feature = "terminal")]
 pub(crate) const ACTIVATION_MODE: Setting<ActivationMode> =
     Setting::new("python.activation_mode", ActivationMode::ActivateScript);
 pub(crate) const VENV_SEARCH_DEPTH: Setting<u32> = Setting::new("python.venv_search_depth", 1);
@@ -28,6 +30,7 @@ pub(crate) enum DefaultInterpreter {
     System,
 }
 
+#[cfg(feature = "terminal")]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ActivationMode {
@@ -36,7 +39,7 @@ pub(crate) enum ActivationMode {
 }
 
 pub(crate) fn settings_page(_: &App) -> SettingPage {
-    SettingPage::new("Toolchains")
+    let page = SettingPage::new("Toolchains")
         .icon(Icon::empty().path("icons/wrench.svg"))
         .description("Python interpreters and virtual environments.")
         .group(group(
@@ -52,61 +55,71 @@ pub(crate) fn settings_page(_: &App) -> SettingPage {
                 ],
             )
             .keywords(["python", "venv", "virtualenv", "conda", "default"])],
-        ))
-        .group(group(
-            "Terminal",
-            [
-                switch(
-                    &ACTIVATE_IN_TERMINAL,
-                    "Activate in terminal",
-                    "Activate the selected environment in new terminals.",
-                )
-                .keywords(["python", "venv", "shell"]),
-                select(
-                    &ACTIVATION_MODE,
-                    "Activation mode",
-                    "Run the activate script, or only set PATH and environment variables.",
-                    [
-                        (ActivationMode::ActivateScript, "Activate script"),
-                        (ActivationMode::EnvironmentOnly, "Environment only"),
-                    ],
-                )
-                .keywords(["python", "venv", "conda activate", "shell"])
-                .enabled_when(|cx| ACTIVATE_IN_TERMINAL.get(cx)),
-            ],
-        ))
-        .group(group(
-            "Discovery",
-            [
-                number(
-                    &VENV_SEARCH_DEPTH,
-                    "Virtual environment search depth",
-                    "How many folder levels below the project root to look for virtual environments.",
-                    Number::range(0., f64::from(MAX_VENV_SEARCH_DEPTH)).unit("levels"),
-                )
-                .keywords(["python", "venv", ".venv", "discover"]),
-                list(
-                    &SEARCH_PATHS,
-                    "Extra search paths",
-                    "Comma-separated folders that contain environments. Relative paths start at the project root.",
-                    "~/.virtualenvs, ~/envs",
-                )
-                .keywords(["python", "venv", "conda", "discover", "folders"])
-                .stacked(),
-                path(
-                    &PYENV_ROOT,
-                    "pyenv root",
-                    "Empty uses $PYENV_ROOT, then ~/.pyenv.",
-                    PathKind::Folder,
-                    "~/.pyenv",
-                )
-                .keywords(["python", "pyenv", "versions"]),
-                switch(
-                    &AUTO_REFRESH,
-                    "Refresh automatically",
-                    "Look for environments again when the window gains focus or an environment changes.",
-                )
-                .keywords(["python", "rediscover", "watch", "pyvenv.cfg", "conda-meta"]),
-            ],
-        ))
+        ));
+    #[cfg(feature = "terminal")]
+    let page = page.group(terminal_group());
+    page.group(discovery_group())
+}
+
+#[cfg(feature = "terminal")]
+fn terminal_group() -> SettingGroup {
+    group(
+        "Terminal",
+        [
+            switch(
+                &ACTIVATE_IN_TERMINAL,
+                "Activate in terminal",
+                "Activate the selected environment in new terminals.",
+            )
+            .keywords(["python", "venv", "shell"]),
+            select(
+                &ACTIVATION_MODE,
+                "Activation mode",
+                "Run the activate script, or only set PATH and environment variables.",
+                [
+                    (ActivationMode::ActivateScript, "Activate script"),
+                    (ActivationMode::EnvironmentOnly, "Environment only"),
+                ],
+            )
+            .keywords(["python", "venv", "conda activate", "shell"])
+            .enabled_when(|cx| ACTIVATE_IN_TERMINAL.get(cx)),
+        ],
+    )
+}
+
+fn discovery_group() -> SettingGroup {
+    group(
+        "Discovery",
+        [
+            number(
+                &VENV_SEARCH_DEPTH,
+                "Virtual environment search depth",
+                "How many folder levels below the project root to look for virtual environments.",
+                Number::range(0., f64::from(MAX_VENV_SEARCH_DEPTH)).unit("levels"),
+            )
+            .keywords(["python", "venv", ".venv", "discover"]),
+            list(
+                &SEARCH_PATHS,
+                "Extra search paths",
+                "Comma-separated folders that contain environments. Relative paths start at the project root.",
+                "~/.virtualenvs, ~/envs",
+            )
+            .keywords(["python", "venv", "conda", "discover", "folders"])
+            .stacked(),
+            path(
+                &PYENV_ROOT,
+                "pyenv root",
+                "Empty uses $PYENV_ROOT, then ~/.pyenv (~/.pyenv/pyenv-win on Windows).",
+                PathKind::Folder,
+                "~/.pyenv",
+            )
+            .keywords(["python", "pyenv", "versions"]),
+            switch(
+                &AUTO_REFRESH,
+                "Refresh automatically",
+                "Look for environments again when an environment is added or removed.",
+            )
+            .keywords(["python", "rediscover", "watch", "pyvenv.cfg", "conda-meta"]),
+        ],
+    )
 }

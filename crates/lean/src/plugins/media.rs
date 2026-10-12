@@ -1,4 +1,5 @@
 mod checkerboard;
+mod empty_state;
 mod formats;
 mod image_viewer;
 mod picture;
@@ -7,7 +8,7 @@ mod svg_viewer;
 
 use gpui_kit::App;
 
-use super::{Plugin, PluginContext};
+use super::{Plugin, Registry};
 
 pub(super) const PLUGIN: Plugin = Plugin {
     id: "media",
@@ -16,8 +17,8 @@ pub(super) const PLUGIN: Plugin = Plugin {
     activate,
 };
 
-fn activate(context: &mut PluginContext, cx: &mut App) {
+fn activate(registry: &mut Registry, cx: &mut App) {
     image_viewer::bind_keys(cx);
-    context.register_viewer(image_viewer::IMAGE_VIEWER);
-    context.register_viewer(svg_viewer::SVG_VIEWER);
+    registry.register_viewer(image_viewer::IMAGE_VIEWER);
+    registry.register_viewer(svg_viewer::SVG_VIEWER);
 }

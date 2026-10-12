@@ -17,40 +17,11 @@ pub(super) fn checkerboard(image_size: Size<DevicePixels>, fit: Fit, cx: &App) -
                 return;
             }
             let area = fit.object_fit().get_bounds(bounds, image_size);
-            paint_cells(area, base, cell, window);
+            let cell_size = CELL.as_f32() * window.scale_factor();
+            window.paint_quad(fill(area, base));
+            window.paint_quad(fill(area, gpui_kit::checkerboard(cell, cell_size)));
         },
     )
     .absolute()
     .size_full()
-}
-
-fn paint_cells(area: Bounds<Pixels>, base: Hsla, cell: Hsla, window: &mut Window) {
-    let visible = area.intersect(&window.content_mask().bounds);
-    if visible.is_empty() {
-        return;
-    }
-    window.paint_quad(fill(visible, base));
-    let first_column = cell_index(visible.left() - area.left());
-    let last_column = cell_index(visible.right() - area.left());
-    let first_row = cell_index(visible.top() - area.top());
-    let last_row = cell_index(visible.bottom() - area.top());
-    for row in first_row..=last_row {
-        for column in first_column..=last_column {
-            if (row + column) % 2 == 0 {
-                continue;
-            }
-            let origin = point(
-                area.left() + CELL * column as f32,
-                area.top() + CELL * row as f32,
-            );
-            let square = Bounds::new(origin, size(CELL, CELL)).intersect(&visible);
-            if !square.is_empty() {
-                window.paint_quad(fill(square, cell));
-            }
-        }
-    }
-}
-
-fn cell_index(distance: Pixels) -> u32 {
-    (distance / CELL).max(0.).floor() as u32
 }

@@ -16,7 +16,7 @@ impl SearchPanel {
     ) -> Option<AnyElement> {
         let theme = cx.theme();
         let file = self.results.files.get(file_index)?;
-        let expanded = !self.collapsed.contains(&file_index);
+        let expanded = !file.collapsed;
         let row = clickable_row(index, theme)
             .pl_1()
             .gap_1()

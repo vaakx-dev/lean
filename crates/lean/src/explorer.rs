@@ -15,7 +15,9 @@ mod tree;
 mod view;
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Instant;
 
 use gpui_kit::{
     App, Context, Entity, EventEmitter, FocusHandle, Focusable, SharedString, Subscription,
@@ -34,7 +36,7 @@ pub(crate) use panel::PANEL;
 pub(crate) use revealing::reveal_active_file;
 
 struct VisibleEntry {
-    path: PathBuf,
+    path: Arc<Path>,
     name: SharedString,
     depth: usize,
     is_dir: bool,
@@ -60,6 +62,7 @@ pub(crate) struct Explorer {
     followed: Option<PathBuf>,
     editing: Option<InlineEdit>,
     loads: FolderLoads,
+    opened_at: Instant,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -87,6 +90,7 @@ impl Explorer {
             followed: None,
             editing: None,
             loads: FolderLoads::default(),
+            opened_at: Instant::now(),
             _subscriptions: subscriptions::subscribe(workspace, window, cx),
         };
         explorer.load_directory(root, window, cx);

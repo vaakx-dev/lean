@@ -1,3 +1,7 @@
+use std::rc::Rc;
+
+use gpui_kit::base::resize_handle;
+use gpui_kit::component::resize_handle_appearance;
 use gpui_kit::*;
 
 use super::activity_bar::ACTIVITY_BAR_WIDTH;
@@ -5,32 +9,54 @@ use super::settings::SIDEBAR_WIDTH_RANGE;
 use super::{GAP, Workspace};
 
 const MIN_EDITOR_WIDTH: Pixels = px(320.);
+const SIDEBAR_BORDER: Pixels = px(1.);
+
+pub(super) struct SidebarDrag;
+
+pub(super) type SidebarResize = Rc<SidebarDrag>;
+
+impl Render for SidebarDrag {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
 
 impl Workspace {
-    pub(super) fn render_resize_handle(&self, cx: &Context<Self>) -> Stateful<Div> {
-        div()
-            .id("sidebar-resize-handle")
-            .w(GAP)
-            .h_full()
-            .flex_shrink_0()
-            .cursor_col_resize()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|workspace, _, _, cx| {
-                    workspace.resizing_sidebar = true;
-                    cx.notify();
-                }),
-            )
-    }
-
     pub(super) fn visible_sidebar_width(&self, window: &Window) -> Pixels {
         self.sidebar_width.min(max_sidebar_width(window))
     }
 
-    fn stop_sidebar_resize(&mut self, cx: &mut Context<Self>) {
-        self.resizing_sidebar = false;
-        cx.notify();
+    pub(super) fn resize_sidebar(
+        &mut self,
+        event: &DragMoveEvent<SidebarResize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (min, _) = SIDEBAR_WIDTH_RANGE;
+        let requested = event.event.position.x - event.bounds.left();
+        let width = requested.min(max_sidebar_width(window)).max(px(min));
+        if width != self.sidebar_width {
+            self.sidebar_width = width;
+            cx.notify();
+        }
     }
+}
+
+pub(super) fn sidebar_resize_handle() -> Div {
+    div()
+        .relative()
+        .flex_shrink_0()
+        .h_full()
+        .w(GAP + SIDEBAR_BORDER)
+        .ml(-SIDEBAR_BORDER)
+        .child(
+            resize_handle::<SidebarDrag, SidebarDrag>("sidebar-resize-handle", Axis::Horizontal)
+                .with_appearance(resize_handle_appearance())
+                .on_drag(SidebarDrag, |_, _, _, cx| {
+                    cx.stop_propagation();
+                    cx.new(|_| SidebarDrag)
+                }),
+        )
 }
 
 pub(in crate::workspace) fn clamp_sidebar_width(width: f32) -> Pixels {
@@ -42,33 +68,4 @@ fn max_sidebar_width(window: &Window) -> Pixels {
     let (min, max) = SIDEBAR_WIDTH_RANGE;
     let room = window.viewport_size().width - ACTIVITY_BAR_WIDTH - GAP * 2. - MIN_EDITOR_WIDTH;
     room.min(px(max)).max(px(min))
-}
-
-pub(super) fn track_sidebar_resize(
-    element: Stateful<Div>,
-    cx: &Context<Workspace>,
-) -> Stateful<Div> {
-    element
-        .cursor_col_resize()
-        .on_mouse_move(
-            cx.listener(|workspace, event: &MouseMoveEvent, window, cx| {
-                if event.pressed_button != Some(MouseButton::Left) {
-                    workspace.stop_sidebar_resize(cx);
-                    return;
-                }
-                let (min, _) = SIDEBAR_WIDTH_RANGE;
-                let width = event.position.x - ACTIVITY_BAR_WIDTH - GAP;
-                workspace.sidebar_width = width.min(max_sidebar_width(window)).max(px(min));
-                cx.notify();
-            }),
-        )
-        .capture_any_mouse_up(cx.listener(|workspace, event: &MouseUpEvent, _, cx| {
-            if event.button == MouseButton::Left {
-                workspace.stop_sidebar_resize(cx);
-            }
-        }))
-        .on_mouse_up_out(
-            MouseButton::Left,
-            cx.listener(|workspace, _, _, cx| workspace.stop_sidebar_resize(cx)),
-        )
 }

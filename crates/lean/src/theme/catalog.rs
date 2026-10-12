@@ -1,14 +1,12 @@
 use std::rc::Rc;
 
 use gpui_kit::component::{ThemeConfig, ThemeRegistry, ThemeSet};
-use gpui_kit::{App, AssetSource as _, Global, SharedString};
+use gpui_kit::{App, Global, SharedString};
 
 use super::user_themes;
-use crate::assets::{self, Assets};
+use crate::assets::BUNDLED_THEME;
 
-const BUNDLED_FOLDER: &str = "themes/";
-
-struct ThemeCatalog {
+pub(crate) struct ThemeCatalog {
     themes: Vec<Rc<ThemeConfig>>,
 }
 
@@ -65,23 +63,8 @@ fn add(themes: &mut Vec<Rc<ThemeConfig>>, theme: Rc<ThemeConfig>) {
 }
 
 fn bundled_themes() -> Vec<ThemeConfig> {
-    let paths = Assets.list(BUNDLED_FOLDER).unwrap_or_else(|error| {
-        log::error!("failed to list the bundled themes: {error:#}");
+    parse_theme_set(BUNDLED_THEME).unwrap_or_else(|error| {
+        log::error!("failed to load the bundled theme: {error}");
         Vec::new()
-    });
-    paths
-        .iter()
-        .filter(|path| path.starts_with(BUNDLED_FOLDER) && path.ends_with(".json"))
-        .flat_map(|path| match bundled_theme(path) {
-            Ok(themes) => themes,
-            Err(error) => {
-                log::error!("failed to load the bundled theme {path}: {error:#}");
-                Vec::new()
-            }
-        })
-        .collect()
-}
-
-fn bundled_theme(path: &str) -> anyhow::Result<Vec<ThemeConfig>> {
-    Ok(parse_theme_set(&assets::load_string(path)?)?)
+    })
 }

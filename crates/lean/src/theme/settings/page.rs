@@ -3,8 +3,8 @@ use gpui_kit::component::setting::{SettingGroup, SettingPage};
 use gpui_kit::{App, SharedString};
 
 use super::{
-    ACCENT, DEFAULT_UI_FONT, RADIUS, RADIUS_MAX, SCROLLBARS, Scrollbars, THEME, UI_FONT_FAMILY,
-    UI_FONT_SIZE, UI_FONT_SIZE_RANGE,
+    ACCENT, RADIUS, RADIUS_MAX, SCROLLBARS, Scrollbars, THEME, UI_FONT_FAMILY, UI_FONT_SIZE,
+    UI_FONT_SIZE_RANGE,
 };
 use crate::plugins;
 use crate::settings::ui::fields::{Number, color, font, group, number, select, switch};
@@ -57,7 +57,7 @@ fn interface_group() -> SettingGroup {
                 &UI_FONT_FAMILY,
                 "UI font",
                 "Font of menus, panels and tabs.",
-                DEFAULT_UI_FONT,
+                "System default",
             )
             .keywords(["typeface", "interface font"]),
             number(

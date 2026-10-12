@@ -6,7 +6,6 @@ use gpui_kit::component::input::{
 };
 use gpui_kit::*;
 
-use super::super::geometry::MAX_COLUMNS;
 use super::super::style::MinimapStyle;
 use super::{Rows, RowsBuilder};
 
@@ -17,6 +16,7 @@ pub(in super::super) struct RowsJob {
     source: Source,
     foreground: Hsla,
     tab_columns: usize,
+    columns: usize,
 }
 
 enum Source {
@@ -63,6 +63,7 @@ impl RowsJob {
             source,
             foreground,
             tab_columns: style.tab_columns.max(1),
+            columns: style.columns,
         }
     }
 
@@ -104,7 +105,7 @@ impl RowsJob {
         let mut offset = text.line_start_offset(line);
         let mut column = 0;
         for character in text.slice_line(line).chars() {
-            if column >= MAX_COLUMNS {
+            if column >= self.columns {
                 break;
             }
             if character == '\t' {

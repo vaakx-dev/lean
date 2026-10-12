@@ -14,6 +14,10 @@ impl SharedPaths {
         self.write().insert(path);
     }
 
+    pub(super) fn remove(&self, path: &Path) {
+        self.write().remove(path);
+    }
+
     pub(super) fn extend(&self, paths: Vec<PathBuf>) {
         self.write().extend(paths);
     }

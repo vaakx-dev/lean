@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use gpui_kit::App;
 
 use super::settings::{WORKING_DIRECTORY, WorkingDirectory};
+
+pub(crate) type Launcher = Rc<dyn Fn(&App) -> TerminalLaunch>;
 
 #[derive(Default)]
 pub(crate) struct TerminalLaunch {

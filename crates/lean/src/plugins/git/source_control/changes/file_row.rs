@@ -116,7 +116,7 @@ impl SourceControl {
         cx: &mut Context<Self>,
     ) {
         let base = match group {
-            ChangeGroup::Staged => DiffBase::Staged,
+            ChangeGroup::Staged => DiffBase::Head,
             ChangeGroup::Unstaged => DiffBase::Index,
         };
         let path = file.path.clone();

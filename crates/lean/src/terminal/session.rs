@@ -1,4 +1,5 @@
 mod config;
+mod foreground;
 mod grid_size;
 mod selection;
 mod shell;
@@ -18,11 +19,13 @@ use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config, Term, TermMode};
 use alacritty_terminal::tty::{self, Pty};
 use futures::channel::mpsc::UnboundedSender;
-use gpui_kit::App;
+use gpui_kit::{App, AppContext as _};
+
+use foreground::ForegroundProbe;
 
 pub(crate) use config::term_config;
 pub(crate) use grid_size::GridSize;
-pub(crate) use shell::{ShellKind, default_shell_program, shell_kind, shell_name};
+pub(crate) use shell::{ShellKind, shell_kind, shell_name};
 
 const WINDOW_ID: u64 = 0;
 
@@ -41,7 +44,7 @@ pub(crate) struct TerminalSession {
     term: Arc<FairMutex<Term<EventProxy>>>,
     sender: EventLoopSender,
     size: Cell<GridSize>,
-    shell_pid: Option<u32>,
+    foreground: Option<ForegroundProbe>,
 }
 
 impl TerminalSession {
@@ -50,22 +53,37 @@ impl TerminalSession {
         environment: &HashMap<String, String>,
         events: UnboundedSender<Event>,
         cx: &App,
+    ) -> impl Future<Output = io::Result<Self>> + use<> {
+        let options = shell::shell_options(working_directory, environment, cx);
+        let config = term_config(cx);
+        let pty = cx.background_spawn(async move {
+            tty::new(&options, GridSize::default().window_size(), WINDOW_ID)
+                .map(|pty| (pty, options.drain_on_exit))
+        });
+        async move {
+            let (pty, drain_on_exit) = pty.await?;
+            Self::attach(pty, drain_on_exit, config, EventProxy(events))
+        }
+    }
+
+    fn attach(
+        pty: Pty,
+        drain_on_exit: bool,
+        config: Config,
+        listener: EventProxy,
     ) -> io::Result<Self> {
         let size = GridSize::default();
-        let listener = EventProxy(events);
-        let options = shell::shell_options(working_directory, environment, cx);
-        let pty = tty::new(&options, size.window_size(), WINDOW_ID)?;
-        let shell_pid = shell_pid(&pty);
-        let term = Term::new(term_config(cx), &size, listener.clone());
+        let foreground = ForegroundProbe::new(&pty);
+        let term = Term::new(config, &size, listener.clone());
         let term = Arc::new(FairMutex::new(term));
-        let event_loop = EventLoop::new(term.clone(), listener, pty, options.drain_on_exit, false)?;
+        let event_loop = EventLoop::new(term.clone(), listener, pty, drain_on_exit, false)?;
         let sender = event_loop.channel();
         event_loop.spawn();
         Ok(Self {
             term,
             sender,
             size: Cell::new(size),
-            shell_pid,
+            foreground,
         })
     }
 
@@ -86,10 +104,9 @@ impl TerminalSession {
     }
 
     pub(crate) fn is_busy(&self) -> bool {
-        self.shell_pid.is_none_or(|pid| {
-            std::fs::read_to_string(format!("/proc/{pid}/task/{pid}/children"))
-                .map_or(true, |children| !children.trim().is_empty())
-        })
+        self.foreground
+            .as_ref()
+            .is_some_and(ForegroundProbe::runs_job)
     }
 
     pub(crate) fn set_config(&self, config: Config) {
@@ -126,14 +143,4 @@ impl Drop for TerminalSession {
     fn drop(&mut self) {
         self.send(Msg::Shutdown);
     }
-}
-
-#[cfg(target_os = "linux")]
-fn shell_pid(pty: &Pty) -> Option<u32> {
-    Some(pty.child().id())
-}
-
-#[cfg(not(target_os = "linux"))]
-fn shell_pid(_: &Pty) -> Option<u32> {
-    None
 }

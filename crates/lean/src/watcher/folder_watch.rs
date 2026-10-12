@@ -1,13 +1,19 @@
-use std::path::Path;
+mod reload;
+mod shared_watcher;
+
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use futures::StreamExt as _;
 use futures::channel::mpsc::{self, UnboundedReceiver};
 use gpui_kit::AsyncApp;
-use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher as _};
+use notify::Event;
+
+pub(crate) use reload::reload_on_change;
 
 pub(crate) struct FolderWatch {
-    watcher: RecommendedWatcher,
+    id: u64,
+    folders: Vec<PathBuf>,
     changes: UnboundedReceiver<()>,
     delay: Duration,
 }
@@ -18,23 +24,19 @@ impl FolderWatch {
         is_relevant: impl Fn(&Event) -> bool + Send + 'static,
     ) -> notify::Result<Self> {
         let (sender, changes) = mpsc::unbounded();
-        let watcher = RecommendedWatcher::new(
-            move |event: notify::Result<Event>| {
-                if event.is_ok_and(|event| is_relevant(&event)) {
-                    sender.unbounded_send(()).ok();
-                }
-            },
-            Config::default(),
-        )?;
+        let id = shared_watcher::subscribe(Box::new(is_relevant), sender)?;
         Ok(Self {
-            watcher,
+            id,
+            folders: Vec::new(),
             changes,
             delay,
         })
     }
 
     pub(crate) fn watch(&mut self, folder: &Path) -> notify::Result<()> {
-        self.watcher.watch(folder, RecursiveMode::NonRecursive)
+        shared_watcher::watch(self.id, folder)?;
+        self.folders.push(folder.to_path_buf());
+        Ok(())
     }
 
     pub(crate) async fn next_change(&mut self, cx: &AsyncApp) -> bool {
@@ -44,5 +46,11 @@ impl FolderWatch {
         cx.background_executor().timer(self.delay).await;
         while self.changes.try_recv().is_ok() {}
         true
+    }
+}
+
+impl Drop for FolderWatch {
+    fn drop(&mut self) {
+        shared_watcher::unsubscribe(self.id, &self.folders);
     }
 }

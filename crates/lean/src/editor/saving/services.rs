@@ -20,20 +20,23 @@ impl EditorArea {
         let own_events = cx.subscribe_in(
             &area,
             window,
-            move |area, _, event: &EditorAreaEvent, window, cx| {
-                match event {
-                    EditorAreaEvent::FileEdited(path) => area.schedule_auto_save(path, window, cx),
-                    EditorAreaEvent::ActiveEditorChanged => {
-                        let current = area.active_file().map(|file| file.id);
-                        if let Some(previous) = active.filter(|previous| Some(*previous) != current)
-                        {
-                            area.auto_save_on_focus_change(previous, window, cx);
-                        }
-                        active = current;
-                    }
-                    _ => {}
+            move |area, _, event: &EditorAreaEvent, window, cx| match event {
+                EditorAreaEvent::FileEdited(path) => {
+                    area.schedule_auto_save(path, window, cx);
+                    area.schedule_backup(window, cx);
                 }
-                area.schedule_backup(window, cx);
+                EditorAreaEvent::Saved | EditorAreaEvent::OpenFilesChanged => {
+                    area.schedule_backup(window, cx)
+                }
+                EditorAreaEvent::ActiveEditorChanged => {
+                    let current = area.active_file().map(|file| file.id);
+                    if let Some(previous) = active.filter(|previous| Some(*previous) != current) {
+                        area.auto_save_on_focus_change(previous, window, cx);
+                    }
+                    active = current;
+                    area.schedule_backup(window, cx);
+                }
+                EditorAreaEvent::FileRecreated(_) | EditorAreaEvent::StatusChanged => {}
             },
         );
         [

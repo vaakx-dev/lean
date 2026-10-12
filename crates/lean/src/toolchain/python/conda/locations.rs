@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,20 +30,24 @@ const SYSTEM_INSTALL_DIRS: &[&str] = &[
     "C:\\ProgramData\\miniforge3",
 ];
 
-pub(super) fn candidate_prefixes(project_root: &Path, search_paths: &[PathBuf]) -> Vec<PathBuf> {
-    let mut prefixes = child_dirs(&project_root.join(PIXI_DIR).join("envs"));
-    for folder in search_paths {
-        prefixes.push(folder.clone());
-        prefixes.extend(child_dirs(folder));
-        prefixes.extend(child_dirs(&folder.join("envs")));
-    }
+pub(super) fn candidate_prefixes(project_root: &Path, searched: &[PathBuf]) -> Vec<PathBuf> {
+    let mut listed = HashSet::new();
+    let mut envs_in = |container: PathBuf| {
+        if listed.insert(container.clone()) {
+            child_dirs(&container)
+        } else {
+            Vec::new()
+        }
+    };
+    let mut prefixes = envs_in(project_root.join(PIXI_DIR).join("envs"));
+    prefixes.extend(searched.iter().cloned());
     for root in installation_roots() {
-        let envs = child_dirs(&root.join("envs"));
+        let envs = envs_in(root.join("envs"));
         prefixes.push(root);
         prefixes.extend(envs);
     }
     for dir in condarc::envs_dirs() {
-        prefixes.extend(child_dirs(&dir));
+        prefixes.extend(envs_in(dir));
     }
     if let Some(prefix) = env::var_os("CONDA_PREFIX") {
         prefixes.push(PathBuf::from(prefix));
@@ -50,7 +55,7 @@ pub(super) fn candidate_prefixes(project_root: &Path, search_paths: &[PathBuf]) 
     if let Some(home) = env::home_dir() {
         let conda_dir = home.join(".conda");
         prefixes.extend(listed_environments(&conda_dir.join("environments.txt")));
-        prefixes.extend(child_dirs(&conda_dir.join("envs")));
+        prefixes.extend(envs_in(conda_dir.join("envs")));
     }
     prefixes
 }

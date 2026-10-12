@@ -2,15 +2,16 @@ mod directory;
 mod exclusions;
 mod ignore_cache;
 mod ignore_rules;
-mod watching;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use anyhow::Result;
 use gpui_kit::{App, Context, EventEmitter, SharedString, Subscription, Task};
 
-use crate::watcher::{FsChanges, FsWatcher};
+use crate::recent_projects::display_name;
+use crate::watcher::{FsChanges, FsWatcher, MetadataWatch};
 
 pub(crate) use directory::DirectoryEntry;
 pub(crate) use exclusions::EXCLUDE;
@@ -38,18 +39,13 @@ impl EventEmitter<FilesChanged> for Project {}
 
 impl Project {
     pub(crate) fn new(root: PathBuf, cx: &mut Context<Self>) -> Self {
-        let name = root
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| root.to_string_lossy().into_owned())
-            .into();
         let ignore = IgnoreCache::new(root.clone(), &EXCLUDE.get(cx));
         let watcher = FsWatcher::start(root.clone(), ignore.clone(), cx);
         let exclusions =
             EXCLUDE.observe(cx, |project, patterns, _| project.set_exclusions(&patterns));
         Self {
+            name: display_name(&root).into(),
             root,
-            name,
             ignore,
             watcher,
             _exclusions: exclusions,
@@ -64,22 +60,53 @@ impl Project {
         &self.name
     }
 
-    pub(crate) fn read_directory(
+    pub(crate) fn read_directories(
         &self,
-        path: &Path,
+        folders: Vec<PathBuf>,
         cx: &App,
-    ) -> Task<Result<Vec<DirectoryEntry>>> {
-        directory::read_directory(path, self.ignore.clone(), cx)
+    ) -> Task<Vec<Result<Vec<DirectoryEntry>>>> {
+        directory::read_directories(folders, self.ignore.clone(), cx)
     }
 
-    pub(crate) fn is_excluded(&self, path: &Path) -> bool {
-        self.ignore.is_excluded(path, path.is_dir())
+    pub(crate) fn changed_presence(
+        &self,
+        listed: Vec<(PathBuf, bool)>,
+        cx: &App,
+    ) -> Task<Vec<PathBuf>> {
+        directory::changed_presence(listed, self.ignore.clone(), cx)
+    }
+
+    pub(crate) fn watches_folder(&self, folder: &Path) -> bool {
+        self.watcher.watches(folder)
+    }
+
+    pub(crate) fn watch_open_files(&self, files: HashSet<PathBuf>) {
+        self.watcher.set_open_files(files);
+    }
+
+    pub(crate) fn watch_metadata(&self, watch: MetadataWatch) {
+        self.watcher.set_metadata(watch);
+    }
+
+    pub(crate) fn rescan(&mut self) {
+        self.watcher.request_rescan();
+    }
+
+    pub(crate) fn refresh_after_activation(&mut self, cx: &mut Context<Self>) {
+        if !self.watcher.is_healthy() {
+            self.ignore.clear();
+            self.apply_fs_changes(FsChanges::rescan(), cx);
+        } else {
+            let unwatched = self.watcher.unwatched_folders();
+            if !unwatched.is_empty() {
+                self.apply_fs_changes(FsChanges::unwatched(unwatched), cx);
+            }
+        }
+        cx.emit(ProjectEvent::Activated);
     }
 
     pub(crate) fn apply_fs_changes(&mut self, changes: FsChanges, cx: &mut Context<Self>) {
-        if !changes.is_empty() {
-            cx.emit(FilesChanged(Rc::new(changes)));
-        }
+        cx.emit(FilesChanged(Rc::new(changes)));
     }
 
     fn set_exclusions(&mut self, patterns: &[String]) {
