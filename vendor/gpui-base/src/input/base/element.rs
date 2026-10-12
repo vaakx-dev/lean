@@ -3138,6 +3138,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
         // Track the y-position of the cursor row for positioning the first line suffix
         let mut cursor_row_y = None;
 
+        window.paint_layer(bounds, |window| {
         for (line, &buffer_line) in prepaint
             .last_layout
             .lines
@@ -3196,6 +3197,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
                 }
             }
         }
+        });
 
         for element in &mut prepaint.token_elements {
             element.paint(window, cx);
@@ -3288,9 +3290,12 @@ impl<M: InputModeKind> Element for TextElement<M> {
                 || state.input_bounds != input_bounds
                 || state.scroll_size != prepaint.scroll_size
                 || state.last_layout.as_ref().is_none_or(|layout| {
-                    layout.cursor_bounds != prepaint.last_layout.cursor_bounds
-                        || layout.line_height != prepaint.last_layout.line_height
+                    layout.line_height != prepaint.last_layout.line_height
                 });
+            let caret_moved = state.last_layout.as_ref().is_none_or(|layout| {
+                layout.cursor_bounds != prepaint.last_layout.cursor_bounds
+            });
+            let caret_consumer_open = caret_moved && M::is_context_menu_open(state, cx);
             state.last_layout = Some(prepaint.last_layout.clone());
             state.last_bounds = Some(bounds);
             state.last_cursor = Some(state.cursor());
@@ -3300,9 +3305,7 @@ impl<M: InputModeKind> Element for TextElement<M> {
             state.update_scroll_offset(Some(prepaint.cursor_scroll_offset), cx);
             state.deferred_scroll_offset = None;
 
-            // Layout consumers need changed geometry, not another notification
-            // for every paint of an unchanged input.
-            if geometry_changed {
+            if geometry_changed || caret_consumer_open {
                 cx.notify();
             }
         });

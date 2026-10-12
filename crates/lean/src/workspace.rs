@@ -29,6 +29,7 @@ use settings::{SIDEBAR_WIDTH, STATUS_BAR_VISIBLE, TITLE_BAR_SEARCH_BOX};
 use sidebar_resize::clamp_sidebar_width;
 use status_bar::WorkspaceStatusBar;
 use terminal_panel::TerminalDock;
+use title_bar::WorkspaceTitleBar;
 
 pub(crate) use close_confirmation::CloseIntent;
 pub(crate) use persistence::restored_window_bounds;
@@ -40,6 +41,7 @@ pub(crate) struct Workspace {
     context: WorkspaceContext,
     panels: Vec<SidebarPanel>,
     status_bar: Entity<WorkspaceStatusBar>,
+    title_bar: Entity<WorkspaceTitleBar>,
     app_menu_bar: Entity<AppMenuBar>,
     focus_handle: FocusHandle,
     active_panel: usize,
@@ -67,10 +69,12 @@ impl Workspace {
             .observe_window_activation(window, |workspace, window, cx| {
                 workspace.refresh_after_activation(window, cx)
             });
+        let workspace_entity = cx.entity();
         let mut workspace = Self {
             context: views.context,
             panels: views.panels,
             status_bar: views.status_bar,
+            title_bar: cx.new(|cx| WorkspaceTitleBar::new(workspace_entity, cx)),
             app_menu_bar: AppMenuBar::new(cx),
             focus_handle: cx.focus_handle(),
             active_panel: 0,

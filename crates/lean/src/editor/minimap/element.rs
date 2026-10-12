@@ -102,7 +102,7 @@ impl Element for MinimapElement {
         let geometry = Geometry::new(bounds, &viewport, self.style.line_height);
         window.set_cursor_style(CursorStyle::Arrow, hitbox);
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            self.paint_lines(&geometry, window, cx);
+            window.paint_layer(bounds, |window| self.paint_lines(&geometry, window, cx));
             if let Some(color) = self.slider_color {
                 window.paint_quad(fill(geometry.slider_bounds(), color));
             }

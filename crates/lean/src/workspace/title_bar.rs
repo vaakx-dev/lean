@@ -11,8 +11,33 @@ const SEARCH_BOX_MAX_WIDTH: Pixels = px(560.);
 const SEARCH_BOX_MIN_WINDOW_WIDTH: Pixels = px(760.);
 const SEARCH_PANEL_ID: &str = "search";
 
+pub(super) struct WorkspaceTitleBar {
+    workspace: WeakEntity<Workspace>,
+    _subscription: Subscription,
+}
+
+impl WorkspaceTitleBar {
+    pub(super) fn new(workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
+        Self {
+            _subscription: cx.observe(&workspace, |_, _, cx| cx.notify()),
+            workspace: workspace.downgrade(),
+        }
+    }
+}
+
+impl Render for WorkspaceTitleBar {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(workspace) = self.workspace.upgrade() else {
+            return div().into_any_element();
+        };
+        workspace.update(cx, |workspace, cx| {
+            workspace.render_title_bar(window, cx).into_any_element()
+        })
+    }
+}
+
 impl Workspace {
-    pub(super) fn render_title_bar(&self, window: &Window, cx: &Context<Self>) -> TitleBar {
+    fn render_title_bar(&self, window: &Window, cx: &Context<Self>) -> TitleBar {
         let theme = cx.theme();
         let project_name = self.context.project.read(cx).name().clone();
         let shows_search_box = TITLE_BAR_SEARCH_BOX.get(cx)

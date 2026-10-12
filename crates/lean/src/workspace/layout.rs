@@ -66,7 +66,11 @@ impl Render for Workspace {
             .bg(theme.background)
             .text_color(theme.foreground);
         bind_commands(root, cx)
-            .child(self.render_title_bar(window, cx))
+            .child(
+                self.title_bar
+                    .clone()
+                    .cached(StyleRefinement::default().w_full().flex_shrink_0()),
+            )
             .child(self.render_body(show_status_bar, window, cx))
             .when(show_status_bar, |root| root.child(self.render_status_bar()))
     }
