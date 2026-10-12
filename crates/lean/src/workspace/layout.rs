@@ -4,7 +4,7 @@ use gpui_kit::*;
 
 use super::commands::bind_commands;
 use super::settings::STATUS_BAR_VISIBLE;
-use super::sidebar_resize::track_sidebar_resize;
+use super::sidebar_resize::sidebar_resize_handle;
 use super::{GAP, Workspace};
 
 impl Workspace {
@@ -17,8 +17,11 @@ impl Workspace {
             .when(!show_status_bar, |body| body.pb(GAP))
             .child(self.render_activity_bar(cx))
             .when(self.shows_sidebar(), |body| {
-                body.child(self.render_sidebar(self.visible_sidebar_width(window), cx))
-                    .child(self.render_resize_handle(cx))
+                body.child(
+                    self.render_sidebar(self.visible_sidebar_width(window), cx)
+                        .on_drag_move(cx.listener(Self::resize_sidebar)),
+                )
+                .child(sidebar_resize_handle())
             })
             .child(self.render_editor_column(cx))
     }
@@ -63,11 +66,8 @@ impl Render for Workspace {
             .bg(theme.background)
             .text_color(theme.foreground);
         bind_commands(root, cx)
-            .when(self.resizing_sidebar, |root| track_sidebar_resize(root, cx))
             .child(self.render_title_bar(window, cx))
             .child(self.render_body(show_status_bar, window, cx))
-            .when(show_status_bar, |root| {
-                root.child(self.render_status_bar(cx))
-            })
+            .when(show_status_bar, |root| root.child(self.render_status_bar()))
     }
 }

@@ -3,7 +3,7 @@ use std::mem;
 use gpui_kit::SharedString;
 
 use super::ansi::{incomplete_escape_start, strip_ansi};
-use super::truncated;
+use super::content::truncated;
 
 pub(super) struct StreamText {
     max_lines: usize,

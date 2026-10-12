@@ -74,7 +74,7 @@ impl Explorer {
         if !entry.is_dir {
             return;
         }
-        let path = entry.path.clone();
+        let path = entry.path.to_path_buf();
         if self.expanded.contains(&path) {
             self.select_index(index + 1, cx);
         } else {
@@ -91,7 +91,7 @@ impl Explorer {
         let Some(entry) = self.selected_entry() else {
             return;
         };
-        let path = entry.path.clone();
+        let path = entry.path.to_path_buf();
         if entry.is_dir && self.expanded.contains(&path) {
             self.toggle_folder(path, window, cx);
             return;
@@ -99,7 +99,7 @@ impl Explorer {
         let parent_index = path.ancestors().skip(1).find_map(|ancestor| {
             self.visible
                 .iter()
-                .position(|entry| !entry.is_draft && entry.path == ancestor)
+                .position(|entry| !entry.is_draft && *entry.path == *ancestor)
         });
         if let Some(parent_index) = parent_index {
             self.select_index(parent_index, cx);
@@ -115,7 +115,7 @@ impl Explorer {
         let Some(entry) = self.selected_entry() else {
             return;
         };
-        let path = entry.path.clone();
+        let path = entry.path.to_path_buf();
         if entry.is_dir {
             self.toggle_folder(path, window, cx);
         } else {
@@ -127,7 +127,7 @@ impl Explorer {
         let selected = self.selected.as_ref()?;
         self.visible
             .iter()
-            .position(|entry| !entry.is_draft && &entry.path == selected)
+            .position(|entry| !entry.is_draft && *entry.path == **selected)
     }
 
     pub(super) fn selected_entry(&self) -> Option<&VisibleEntry> {
@@ -137,7 +137,7 @@ impl Explorer {
 
     pub(super) fn select_index(&mut self, index: usize, cx: &mut Context<Self>) {
         if let Some(entry) = self.visible.get(index) {
-            self.selected = Some(entry.path.clone());
+            self.selected = Some(entry.path.to_path_buf());
             self.scroll_handle
                 .scroll_to_item(index, ScrollStrategy::Nearest);
             cx.notify();

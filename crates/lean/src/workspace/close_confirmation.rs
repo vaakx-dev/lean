@@ -84,8 +84,8 @@ impl Workspace {
     }
 
     fn allows_window_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        self.save_window_state(window);
         if self.close_confirmed || !self.needs_close_confirmation(CloseIntent::Quit, cx) {
+            self.save_window_state(window);
             return true;
         }
         let confirmation = self.confirm_close(CloseIntent::Quit, window, cx);
@@ -96,6 +96,7 @@ impl Workspace {
             workspace
                 .update_in(cx, |workspace, window, _| {
                     workspace.close_confirmed = true;
+                    workspace.save_window_state(window);
                     window.remove_window();
                 })
                 .ok();

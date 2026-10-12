@@ -1,12 +1,86 @@
-use gpui_kit::component::{ActiveTheme as _, Icon, h_flex};
-use gpui_kit::prelude::FluentBuilder as _;
+mod tab;
+
+use gpui_kit::component::{ActiveTheme as _, Theme, h_flex};
 use gpui_kit::*;
 
 use super::EditorArea;
-use super::open_file::{OpenFile, TabKind};
-use crate::files::file_icon;
+use tab::TabState;
 
-const TAB_GROUP: &str = "tab";
+const TABS_ID: &str = "editor-tabs";
+const TABS_STATE: &str = "editor-tabs-state";
+
+struct Tabs {
+    area: WeakEntity<EditorArea>,
+    tabs: Vec<TabState>,
+    _subscriptions: [Subscription; 2],
+}
+
+impl Tabs {
+    fn new(area: Entity<EditorArea>, cx: &mut Context<Self>) -> Self {
+        let tabs = TabState::collect(area.read(cx));
+        let subscriptions = [
+            cx.observe(&area, |tabs, area, cx| tabs.sync(&area, cx)),
+            cx.observe_global::<Theme>(|_, cx| cx.notify()),
+        ];
+        Self {
+            area: area.downgrade(),
+            tabs,
+            _subscriptions: subscriptions,
+        }
+    }
+
+    fn sync(&mut self, area: &Entity<EditorArea>, cx: &mut Context<Self>) {
+        let tabs = TabState::collect(area.read(cx));
+        if tabs != self.tabs {
+            self.tabs = tabs;
+            cx.notify();
+        }
+    }
+
+    fn update_area(
+        &self,
+        cx: &mut App,
+        update: impl FnOnce(&mut EditorArea, &mut Context<EditorArea>),
+    ) {
+        self.area.update(cx, update).ok();
+    }
+}
+
+impl Render for Tabs {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        h_flex()
+            .id(TABS_ID)
+            .size_full()
+            .overflow_x_scroll()
+            .children(
+                self.tabs
+                    .iter()
+                    .enumerate()
+                    .map(|(index, tab)| tab.render(index, cx)),
+            )
+    }
+}
+
+struct TabStrip {
+    area: Entity<EditorArea>,
+}
+
+impl RenderOnce for TabStrip {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let area = self.area;
+        window
+            .use_keyed_state(TABS_STATE, cx, move |_, cx| Tabs::new(area, cx))
+            .cached(StyleRefinement::default().flex_1().min_w_0().h_full())
+    }
+}
+
+impl IntoElement for TabStrip {
+    type Element = ViewElement<Self>;
+
+    fn into_element(self) -> Self::Element {
+        ViewElement::new(self)
+    }
+}
 
 impl EditorArea {
     pub(super) fn render_tab_bar(&self, cx: &Context<Self>) -> Div {
@@ -16,130 +90,7 @@ impl EditorArea {
             .flex_shrink_0()
             .border_b_1()
             .border_color(theme.border)
-            .child(self.render_tabs(cx))
+            .child(TabStrip { area: cx.entity() })
             .children(self.render_file_actions(cx))
     }
-
-    fn render_tabs(&self, cx: &Context<Self>) -> Stateful<Div> {
-        h_flex()
-            .id("editor-tabs")
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .overflow_x_scroll()
-            .children(
-                self.files
-                    .iter()
-                    .enumerate()
-                    .map(|(index, file)| self.render_tab(index, file, cx)),
-            )
-    }
-
-    fn render_tab(&self, index: usize, file: &OpenFile, cx: &Context<Self>) -> Stateful<Div> {
-        let theme = cx.theme();
-        let is_active = self.active == Some(index);
-        h_flex()
-            .id(index)
-            .group(TAB_GROUP)
-            .relative()
-            .h_full()
-            .flex_shrink_0()
-            .pl_3()
-            .pr_1p5()
-            .gap_1p5()
-            .border_r_1()
-            .border_color(theme.border)
-            .cursor_pointer()
-            .text_color(theme.muted_foreground)
-            .when(is_active, |tab| {
-                tab.bg(theme.background).text_color(theme.foreground).child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .right_0()
-                        .h(px(1.))
-                        .bg(theme.primary),
-                )
-            })
-            .when(!is_active, |tab| {
-                tab.hover(|style| style.bg(theme.list_hover))
-            })
-            .on_click(cx.listener(move |area, event: &ClickEvent, window, cx| {
-                if event.click_count() > 1 {
-                    area.pin(index, cx);
-                }
-                area.activate(index, window, cx)
-            }))
-            .on_mouse_down(
-                MouseButton::Middle,
-                cx.listener(move |area, _, window, cx| area.close(index, window, cx)),
-            )
-            .child(tab_icon(file))
-            .child(
-                div()
-                    .when(file.deleted, |name| name.line_through())
-                    .when(file.preview, |name| name.italic())
-                    .child(file.name.clone()),
-            )
-            .when(file.disk.conflict, |tab| {
-                tab.child(
-                    Icon::empty()
-                        .path("icons/triangle-alert.svg")
-                        .size(px(14.))
-                        .text_color(theme.warning),
-                )
-            })
-            .child(close_button(index, file.dirty, is_active, cx))
-    }
-}
-
-fn tab_icon(file: &OpenFile) -> Icon {
-    match &file.kind {
-        TabKind::File => file_icon(&file.name),
-        TabKind::View { icon } => Icon::empty().path(icon.clone()).size_4(),
-    }
-}
-
-fn close_button(
-    index: usize,
-    is_dirty: bool,
-    is_active: bool,
-    cx: &Context<EditorArea>,
-) -> Stateful<Div> {
-    let theme = cx.theme();
-    div()
-        .id("close")
-        .relative()
-        .size(px(20.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(theme.radius)
-        .hover(|style| style.bg(theme.accent))
-        .on_click(cx.listener(move |area, _, window, cx| {
-            cx.stop_propagation();
-            area.close(index, window, cx)
-        }))
-        .child(
-            div()
-                .flex()
-                .when(is_dirty || !is_active, |icon| icon.invisible())
-                .group_hover(TAB_GROUP, |style| style.visible())
-                .child(Icon::empty().path("icons/x.svg").size(px(14.))),
-        )
-        .when(is_dirty, |close| {
-            close.child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .group_hover(TAB_GROUP, |style| style.invisible())
-                    .child(div().size(px(8.)).rounded_full().bg(theme.foreground)),
-            )
-        })
 }

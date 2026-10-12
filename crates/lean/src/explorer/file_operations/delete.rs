@@ -24,7 +24,7 @@ impl Explorer {
         let Some(entry) = self.selected_entry() else {
             return;
         };
-        let path = entry.path.clone();
+        let path = entry.path.to_path_buf();
         let is_dir = entry.is_dir;
         let name = file_name(&path);
         let permanently = DELETE_TO.get(cx) == DeleteTo::Permanent;
@@ -106,11 +106,12 @@ impl Explorer {
         let index = self
             .visible
             .iter()
-            .position(|entry| !entry.is_draft && entry.path == path);
-        self.expanded.retain(|folder| !folder.starts_with(&path));
-        self.children.retain(|folder, _| !folder.starts_with(&path));
-        for children in self.children.values_mut() {
-            children.retain(|child| child.path != path);
+            .position(|entry| !entry.is_draft && *entry.path == *path);
+        self.forget_subtrees(&[&path]);
+        if let Some(parent) = path.parent()
+            && let Some(siblings) = self.children.get_mut(parent)
+        {
+            siblings.retain(|child| *child.path != *path);
         }
         self.rebuild_visible();
         if let Some(index) = index
@@ -120,7 +121,7 @@ impl Explorer {
                 .is_some_and(|selected| selected.starts_with(&path))
         {
             let next = index.min(self.visible.len().saturating_sub(1));
-            self.selected = self.visible.get(next).map(|entry| entry.path.clone());
+            self.selected = self.visible.get(next).map(|entry| entry.path.to_path_buf());
         }
         if let Some(folder) = path.parent().map(Path::to_path_buf) {
             self.finish_file_operation(folder, None, window, cx);

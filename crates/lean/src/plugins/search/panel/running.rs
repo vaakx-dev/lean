@@ -119,7 +119,6 @@ impl SearchPanel {
 
     fn reset_results(&mut self) {
         self.results = SearchResults::default();
-        self.collapsed.clear();
         self.active_line = None;
         self.rebuild_rows();
         self.scroll_handle.scroll_to_item(0, ScrollStrategy::Top);

@@ -83,12 +83,12 @@ impl Explorer {
 
     fn target_path(&self) -> PathBuf {
         self.selected_entry()
-            .map_or_else(|| self.root.clone(), |entry| entry.path.clone())
+            .map_or_else(|| self.root.clone(), |entry| entry.path.to_path_buf())
     }
 
     fn target_folder(&self) -> PathBuf {
         match self.selected_entry() {
-            Some(entry) if entry.is_dir => entry.path.clone(),
+            Some(entry) if entry.is_dir => entry.path.to_path_buf(),
             Some(entry) => entry
                 .path
                 .parent()

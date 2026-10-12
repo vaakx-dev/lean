@@ -12,14 +12,15 @@ pub(crate) struct IgnoreRules {
 }
 
 impl IgnoreRules {
-    pub(crate) fn discover(path: &Path) -> Self {
-        let repository = path
-            .ancestors()
-            .find(|ancestor| ancestor.join(".git").exists());
-        let workdir = repository.unwrap_or(path);
+    pub(super) fn new(workdir: &Path) -> Self {
+        let shared = if is_repository(workdir) {
+            shared_rules(workdir)
+        } else {
+            Gitignore::empty()
+        };
         Self {
-            shared: repository.map_or_else(Gitignore::empty, shared_rules),
             workdir: workdir.to_path_buf(),
+            shared,
             folders: HashMap::new(),
             ignored_dirs: HashMap::new(),
         }
@@ -69,6 +70,10 @@ impl IgnoreRules {
         }
         self.folders.get(folder).and_then(Option::as_ref)
     }
+}
+
+pub(super) fn is_repository(folder: &Path) -> bool {
+    folder.join(".git").exists()
 }
 
 fn folder_rules(folder: &Path) -> Option<Gitignore> {

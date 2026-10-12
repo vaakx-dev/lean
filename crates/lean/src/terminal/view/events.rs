@@ -1,6 +1,5 @@
 use alacritty_terminal::event::Event;
 use alacritty_terminal::vte::ansi::Rgb;
-use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{ClipboardItem, Context};
 
 use super::TerminalView;
@@ -34,7 +33,7 @@ impl TerminalView {
             }
             Event::ColorRequest(index, format) => {
                 if let Some(session) = self.session() {
-                    let color = terminal_color(&session, index, cx);
+                    let color = terminal_color(&session, index, &self.appearance.palette);
                     session.write(format(color).into_bytes());
                 }
             }
@@ -54,8 +53,7 @@ impl TerminalView {
     }
 }
 
-fn terminal_color(session: &TerminalSession, index: usize, cx: &Context<TerminalView>) -> Rgb {
-    let palette = Palette::new(cx.theme());
+fn terminal_color(session: &TerminalSession, index: usize, palette: &Palette) -> Rgb {
     let color = palette.indexed(index, session.lock().colors());
     rgb_from_hsla(color)
 }

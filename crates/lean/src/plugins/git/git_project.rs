@@ -1,3 +1,4 @@
+mod changes;
 mod decorations;
 mod diff_views;
 mod gutter;
@@ -78,20 +79,20 @@ impl GitProject {
             _subscriptions: subscriptions,
             _settings: Self::observe_settings(cx),
         };
-        git.refresh(cx);
+        git.start_read(cx);
         git
     }
 
     fn observe_settings(cx: &mut Context<Self>) -> Vec<Subscription> {
         vec![
-            INCLUDE_UNTRACKED.observe(cx, |git, _, cx| git.refresh(cx)),
-            SHOW_HISTORY.observe(cx, |git, _, cx| git.refresh(cx)),
+            INCLUDE_UNTRACKED.observe(cx, |git, _, cx| git.start_read(cx)),
+            SHOW_HISTORY.observe(cx, |git, _, cx| git.start_read(cx)),
             HISTORY_LIMIT.observe(cx, |git, _, cx| {
                 git.history_limit = history_page_size(cx);
-                git.refresh(cx);
+                git.start_read(cx);
             }),
             GUTTER_ENABLED.observe(cx, |git, _, cx| git.repaint_gutter(cx)),
-            GUTTER_BASE.observe(cx, |git, _, cx| git.repaint_gutter(cx)),
+            GUTTER_BASE.observe(cx, |git, _, cx| git.gutter_base_changed(cx)),
             EXPLORER_DECORATIONS.observe(cx, |git, _, cx| git.publish_decorations(cx)),
             EXPLORER_FOLDER_DOTS.observe(cx, |git, _, cx| git.publish_decorations(cx)),
         ]
@@ -121,7 +122,7 @@ impl GitProject {
     fn editor_event(&mut self, event: &EditorAreaEvent, cx: &mut Context<Self>) {
         match event {
             EditorAreaEvent::OpenFilesChanged => self.schedule_gutter(cx),
-            EditorAreaEvent::FileEdited(path) => self.refresh_gutter_for(path.clone(), cx),
+            EditorAreaEvent::FileEdited(path) => self.refresh_gutter_for(path, cx),
             EditorAreaEvent::Saved => self.schedule_refresh(cx),
             _ => {}
         }

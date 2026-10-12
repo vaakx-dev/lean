@@ -3,7 +3,7 @@ use std::time::Duration;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::*;
 
-use crate::app::keymap::set_keys;
+use crate::app::keymap::{KEYMAP, Table, set_keys};
 
 const SEQUENCE_DELAY: Duration = Duration::from_millis(900);
 const MAX_KEYSTROKES: usize = 2;
@@ -25,6 +25,7 @@ pub(super) struct TableState {
     pub(super) search: Entity<InputState>,
     pub(super) recording: Option<Recording>,
     pub(super) focus_handle: FocusHandle,
+    pub(super) table: Table,
     commit_task: Task<()>,
     _subscriptions: Vec<Subscription>,
 }
@@ -38,11 +39,16 @@ impl TableState {
             cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify()),
             cx.on_blur(&focus_handle, window, |state, _, cx| state.cancel(cx)),
             intercept_keystrokes(&focus_handle, cx),
+            KEYMAP.observe(cx, |state, _, cx| {
+                state.table = Table::load(cx);
+                cx.notify();
+            }),
         ];
         Self {
             search,
             recording: None,
             focus_handle,
+            table: Table::load(cx),
             commit_task: Task::ready(()),
             _subscriptions: subscriptions,
         }

@@ -1,3 +1,4 @@
+use super::Toolchain;
 use crate::terminal::ShellKind;
 
 pub(crate) struct ShellActivation {
@@ -7,7 +8,7 @@ pub(crate) struct ShellActivation {
 }
 
 impl ShellActivation {
-    pub(super) fn command(&self, shell: ShellKind) -> Option<&str> {
+    fn command(&self, shell: ShellKind) -> Option<&str> {
         match shell {
             ShellKind::Posix => Some(self.posix.as_str()),
             ShellKind::Fish => Some(self.fish.as_str()),
@@ -15,6 +16,14 @@ impl ShellActivation {
             ShellKind::Other => None,
         }
     }
+}
+
+pub(super) fn activation_command(active: &[&Toolchain], shell: ShellKind) -> Option<String> {
+    let commands: Vec<&str> = active
+        .iter()
+        .filter_map(|toolchain| toolchain.activation.as_ref()?.command(shell))
+        .collect();
+    (!commands.is_empty()).then(|| format!(" {}", commands.join("; ")))
 }
 
 pub(super) fn posix_quote(value: &str) -> String {

@@ -1,6 +1,8 @@
 mod store;
+mod writer;
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gpui_kit::*;
@@ -9,18 +11,36 @@ use super::super::EditorArea;
 use super::super::open_file::OpenFile;
 use super::super::opening::Placement;
 use crate::files::settings::HOT_EXIT;
-use store::BackupStore;
+use store::{BackupStore, read_backup};
+use writer::{BackupChange, write_later, write_now};
 
 pub(in crate::editor) use store::BackupFile;
 
 const BACKUP_DELAY: Duration = Duration::from_secs(1);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct BackupKey {
+    id: u64,
+    version: u64,
+    base_hash: u64,
+}
+
+impl BackupKey {
+    fn of(file: &OpenFile) -> Self {
+        Self {
+            id: file.id,
+            version: file.version,
+            base_hash: file.disk.saved_hash,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(in crate::editor) struct HotExit {
     store: Option<BackupStore>,
     ready: bool,
-    stored: bool,
-    kept: Vec<(u64, u64)>,
+    stored: HashMap<PathBuf, Option<BackupKey>>,
+    kept: Vec<BackupKey>,
     _pending: Option<Task<()>>,
 }
 
@@ -32,28 +52,33 @@ impl EditorArea {
         cx: &mut Context<Self>,
     ) {
         let store = BackupStore::for_project(project_root);
-        let stored = store.as_ref().is_some_and(BackupStore::exists);
         self.hot_exit = HotExit {
             store: store.clone(),
-            stored,
             ..HotExit::default()
         };
-        let read =
-            cx.background_spawn(
-                async move { store.filter(|_| stored).and_then(|store| store.read()) },
-            );
+        let restore = HOT_EXIT.get(cx);
+        let read = cx.background_spawn(async move {
+            let files = store.map(|store| store.stored_files()).unwrap_or_default();
+            let backups: Vec<BackupFile> = if restore {
+                files.iter().filter_map(|file| read_backup(file)).collect()
+            } else {
+                Vec::new()
+            };
+            (files, backups)
+        });
         cx.spawn_in(window, async move |area, cx| {
-            let backup = read.await;
+            let (files, backups) = read.await;
             area.update_in(cx, |area, window, cx| {
                 area.hot_exit.ready = true;
-                match backup {
-                    Some(backup) if HOT_EXIT.get(cx) => {
-                        for file in backup.files {
-                            let path = file.path.clone();
-                            area.open_placed(path, Placement::Restore(file), window, cx);
-                        }
-                    }
-                    _ => area.back_up_unsaved(false, cx),
+                area.hot_exit.stored = files.into_iter().map(|file| (file, None)).collect();
+                if backups.is_empty() || !HOT_EXIT.get(cx) {
+                    area.back_up_unsaved(false, cx);
+                    return;
+                }
+                for backup in backups {
+                    let path = backup.path.clone();
+                    area.open_placed(path, Placement::Restore(backup), window, cx)
+                        .detach();
                 }
             })
             .ok();
@@ -62,11 +87,12 @@ impl EditorArea {
     }
 
     pub(super) fn schedule_backup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let kept: Vec<(u64, u64)> = self
+        let enabled = HOT_EXIT.get(cx);
+        let kept: Vec<BackupKey> = self
             .files
             .iter()
-            .filter(|file| file.kept_on_exit(cx))
-            .map(|file| (file.id, file.version))
+            .filter(|file| enabled && file.is_file() && file.dirty)
+            .map(BackupKey::of)
             .collect();
         if self.hot_exit.kept == kept {
             return;
@@ -84,18 +110,17 @@ impl EditorArea {
             self.hot_exit.kept.clear();
             return;
         }
-        let Some(store) = &self.hot_exit.store else {
+        let Some(store) = self.hot_exit.store.clone() else {
             return;
         };
-        let files = self.unsaved_backups(cx);
-        if files.is_empty() && !self.hot_exit.stored {
+        let changes = self.backup_changes(&store, cx);
+        if changes.is_empty() {
             return;
         }
-        self.hot_exit.stored = !files.is_empty();
         if now {
-            store.save_now(files);
+            write_now(changes);
         } else {
-            store.save(files, cx);
+            write_later(changes, cx);
         }
     }
 
@@ -117,21 +142,36 @@ impl EditorArea {
         cx.notify();
     }
 
-    fn unsaved_backups(&self, cx: &App) -> Vec<BackupFile> {
-        if !HOT_EXIT.get(cx) {
-            return Vec::new();
-        }
-        self.files
-            .iter()
-            .filter(|file| file.is_file() && file.dirty)
-            .filter_map(|file| {
-                Some(BackupFile {
+    fn backup_changes(&mut self, store: &BackupStore, cx: &App) -> Vec<BackupChange> {
+        let enabled = HOT_EXIT.get(cx);
+        let mut stored = HashMap::new();
+        let mut changes = Vec::new();
+        for file in &self.files {
+            if !(enabled && file.is_file() && file.dirty) {
+                continue;
+            }
+            let backup_file = store.file_for(&file.path);
+            let key = Some(BackupKey::of(file));
+            if self.hot_exit.stored.get(&backup_file) != Some(&key) {
+                let Some(text) = file.view.unsaved_text(cx) else {
+                    continue;
+                };
+                let backup = BackupFile {
                     path: file.path.clone(),
                     base_hash: file.disk.saved_hash,
-                    text: file.view.unsaved_text(cx)?,
-                })
-            })
-            .collect()
+                    text,
+                };
+                changes.push((backup_file.clone(), Some(backup)));
+            }
+            stored.insert(backup_file, key);
+        }
+        for backup_file in self.hot_exit.stored.keys() {
+            if !stored.contains_key(backup_file) {
+                changes.push((backup_file.clone(), None));
+            }
+        }
+        self.hot_exit.stored = stored;
+        changes
     }
 }
 

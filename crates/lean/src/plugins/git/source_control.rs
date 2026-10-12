@@ -108,7 +108,7 @@ impl SourceControl {
     fn reload(&mut self, cx: &mut Context<Self>) {
         if let Some(git) = self.git.read(cx).state() {
             self.changes = Changes::collect(git);
-            self.history = History::build(&git.history);
+            self.history.update(&git.history);
             self.has_more_history = git.has_more_history;
         } else {
             self.changes = Changes::default();

@@ -18,20 +18,20 @@ name = "lean"
 path = "src/main.rs"
 
 [features]
-default = ["git", "notebook", "search", "media", "browser"]
+default = ["git", "search", "media", "browser", "terminal"]
 notebook = ["dep:base64", "dep:jupyter-protocol", "dep:runtimelib", "dep:tokio"]
 git = ["dep:git2"]
 search = ["dep:regex"]
-media = []
+media = ["dep:roxmltree"]
 browser = []
+terminal = ["dep:alacritty_terminal"]
 
 [dependencies]
-alacritty_terminal = "0.26.0"
+alacritty_terminal = { version = "0.26.0", optional = true }
 anyhow.workspace = true
 base64 = { version = "0.22", optional = true }
 dirs = "6"
 dunce = "1"
-env_logger.workspace = true
 futures = "0.3"
 git2 = { workspace = true, optional = true }
 gpui-kit.workspace = true
@@ -40,15 +40,14 @@ jupyter-protocol = { version = "1.4", optional = true }
 log.workspace = true
 notify = "8.2"
 regex = { version = "1", optional = true }
-ropey = { version = "=2.0.0-beta.1", default-features = false }
+roxmltree = { version = "0.21", optional = true }
 runtimelib = { version = "1.4", features = ["tokio-runtime"], optional = true }
-rust-embed = { version = "8", features = ["include-exclude"] }
 self-replace = "1.5.0"
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tokio = { version = "1", features = ["rt-multi-thread", "process", "time", "fs", "io-util", "macros"], optional = true }
+tokio = { version = "1", optional = true }
 trash = "5.2.9"
 ureq = { version = "3.4.2", features = ["json"] }
 uuid = { version = "1", features = ["v4"] }

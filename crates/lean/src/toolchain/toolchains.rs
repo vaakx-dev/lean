@@ -1,21 +1,25 @@
 mod active;
 mod selection;
+#[cfg(feature = "terminal")]
+mod terminal_launch;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::time::Duration;
 
-use gpui_kit::{App, AppContext as _, Context, EventEmitter, SharedString, Subscription, Task};
+use gpui_kit::{AppContext as _, Context, EventEmitter, SharedString, Subscription, Task};
 
 use super::Toolchain;
-use super::activation::{activation_command, activation_environment};
-use super::auto_refresh;
+use super::activation::activation_environment;
+use super::auto_refresh::{AutoRefresh, watched_folders};
 use super::python::{DiscoveryOptions, discover};
 use super::settings::{
-    ACTIVATE_IN_TERMINAL, ACTIVATION_MODE, AUTO_REFRESH, ActivationMode, DEFAULT_INTERPRETER,
-    DefaultInterpreter, PYENV_ROOT, SEARCH_PATHS, VENV_SEARCH_DEPTH,
+    AUTO_REFRESH, DEFAULT_INTERPRETER, DefaultInterpreter, PYENV_ROOT, SEARCH_PATHS,
+    VENV_SEARCH_DEPTH,
 };
 use super::store::{self, Choices};
-use crate::terminal::{ShellKind, TerminalLaunch};
+
+const DISCOVERY_DELAY: Duration = Duration::from_secs(2);
 
 pub(crate) enum ToolchainsEvent {
     Discovered,
@@ -25,10 +29,12 @@ pub(crate) enum ToolchainsEvent {
 pub(crate) struct Toolchains {
     project_root: PathBuf,
     available: Vec<Toolchain>,
+    active_labels: HashMap<&'static str, SharedString>,
     choices: Choices,
     default_interpreter: DefaultInterpreter,
     discovered: bool,
-    auto_refresh: Option<Task<()>>,
+    discovering: bool,
+    auto_refresh: Option<AutoRefresh>,
     _discovery_task: Task<()>,
     _settings: Vec<Subscription>,
 }
@@ -37,18 +43,18 @@ impl EventEmitter<ToolchainsEvent> for Toolchains {}
 
 impl Toolchains {
     pub(crate) fn new(project_root: PathBuf, cx: &mut Context<Self>) -> Self {
-        let mut toolchains = Self {
+        Self {
             project_root,
             available: Vec::new(),
+            active_labels: HashMap::new(),
             choices: Choices::new(),
             default_interpreter: DEFAULT_INTERPRETER.get(cx),
             discovered: false,
+            discovering: false,
             auto_refresh: None,
-            _discovery_task: Task::ready(()),
+            _discovery_task: Self::discover_when_idle(cx),
             _settings: Self::observe_settings(cx),
-        };
-        toolchains.refresh(cx);
-        toolchains
+        }
     }
 
     fn observe_settings(cx: &mut Context<Self>) -> Vec<Subscription> {
@@ -56,15 +62,31 @@ impl Toolchains {
             DEFAULT_INTERPRETER.observe(cx, |toolchains, default, cx| {
                 toolchains.set_default_interpreter(default, cx)
             }),
-            VENV_SEARCH_DEPTH.observe(cx, |toolchains, _, cx| toolchains.refresh(cx)),
-            SEARCH_PATHS.observe(cx, |toolchains, _, cx| toolchains.refresh(cx)),
-            PYENV_ROOT.observe(cx, |toolchains, _, cx| toolchains.refresh(cx)),
+            VENV_SEARCH_DEPTH.observe(cx, |toolchains, _, cx| toolchains.rediscover(cx)),
+            SEARCH_PATHS.observe(cx, |toolchains, _, cx| toolchains.rediscover(cx)),
+            PYENV_ROOT.observe(cx, |toolchains, _, cx| toolchains.rediscover(cx)),
             AUTO_REFRESH.observe(cx, |toolchains, enabled, cx| {
                 toolchains.set_auto_refresh(enabled, cx)
             }),
         ]
     }
 
+    fn discover_when_idle(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |toolchains, cx| {
+            cx.background_executor().timer(DISCOVERY_DELAY).await;
+            toolchains
+                .update(cx, |toolchains, cx| toolchains.ensure_discovered(cx))
+                .ok();
+        })
+    }
+
+    pub(crate) fn ensure_discovered(&mut self, cx: &mut Context<Self>) {
+        if !self.discovered && !self.discovering {
+            self.refresh(cx);
+        }
+    }
+
+    #[cfg(feature = "notebook")]
     pub(crate) fn is_discovered(&self) -> bool {
         self.discovered
     }
@@ -73,48 +95,37 @@ impl Toolchains {
         activation_environment(&self.available, &self.active_toolchains())
     }
 
-    pub(crate) fn terminal_launch(&self, shell: ShellKind, cx: &App) -> TerminalLaunch {
-        if !ACTIVATE_IN_TERMINAL.get(cx) {
-            return TerminalLaunch::default();
-        }
-        let startup_command = match ACTIVATION_MODE.get(cx) {
-            ActivationMode::ActivateScript => activation_command(&self.active_toolchains(), shell),
-            ActivationMode::EnvironmentOnly => None,
-        };
-        TerminalLaunch {
-            environment: self.environment(),
-            startup_command,
-            ..TerminalLaunch::default()
-        }
-    }
-
     pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
         let root = self.project_root.clone();
         let options = DiscoveryOptions::from_settings(&root, cx);
-        let load_choices = !self.is_discovered();
+        let load_choices = !self.discovered;
+        let watch = AUTO_REFRESH.get(cx);
+        self.discovering = true;
         let discovery = cx.background_spawn(async move {
             let choices = load_choices.then(|| store::load(&root));
-            (discover(&root, &options), choices)
+            let available = discover(&root, &options);
+            let folders = watch.then(|| watched_folders(&root, &options.search_paths, &available));
+            (available, choices, folders)
         });
         self._discovery_task = cx.spawn(async move |toolchains, cx| {
-            let (available, choices) = discovery.await;
+            let (available, choices, folders) = discovery.await;
             toolchains
                 .update(cx, |toolchains, cx| {
-                    toolchains.finish_discovery(available, choices, cx)
+                    toolchains.finish_discovery(available, choices, folders, cx)
                 })
                 .ok();
         });
     }
 
-    pub(crate) fn refresh_if_automatic(&mut self, cx: &mut Context<Self>) {
-        if AUTO_REFRESH.get(cx) {
+    fn rediscover(&mut self, cx: &mut Context<Self>) {
+        if self.discovered || self.discovering {
             self.refresh(cx);
         }
     }
 
     fn set_auto_refresh(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if enabled {
-            self.refresh(cx);
+            self.rediscover(cx);
         } else {
             self.auto_refresh = None;
         }
@@ -124,8 +135,10 @@ impl Toolchains {
         &mut self,
         available: Vec<Toolchain>,
         choices: Option<Choices>,
+        folders: Option<Vec<PathBuf>>,
         cx: &mut Context<Self>,
     ) {
+        self.discovering = false;
         self.track_selection(cx, |toolchains| {
             toolchains.available = available;
             if let Some(mut loaded) = choices {
@@ -134,22 +147,28 @@ impl Toolchains {
             }
             toolchains.discovered = true;
         });
-        self.sync_auto_refresh(cx);
+        self.sync_auto_refresh(folders, cx);
         cx.emit(ToolchainsEvent::Discovered);
         cx.notify();
     }
 
-    fn sync_auto_refresh(&mut self, cx: &mut Context<Self>) {
-        self.auto_refresh = None;
-        if !AUTO_REFRESH.get(cx) {
+    fn sync_auto_refresh(&mut self, folders: Option<Vec<PathBuf>>, cx: &mut Context<Self>) {
+        let enabled = AUTO_REFRESH.get(cx);
+        let Some(folders) = folders.filter(|_| enabled) else {
+            self.auto_refresh = None;
+            return;
+        };
+        let known: HashSet<PathBuf> = self
+            .available
+            .iter()
+            .map(|toolchain| toolchain.prefix.clone())
+            .collect();
+        if let Some(auto_refresh) = &self.auto_refresh
+            && auto_refresh.watches(&folders)
+        {
+            auto_refresh.set_known(known);
             return;
         }
-        let options = DiscoveryOptions::from_settings(&self.project_root, cx);
-        self.auto_refresh = auto_refresh::watch(
-            &self.project_root,
-            &options.search_paths,
-            &self.available,
-            cx,
-        );
+        self.auto_refresh = AutoRefresh::start(folders, known, cx);
     }
 }

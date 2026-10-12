@@ -62,7 +62,7 @@ impl Explorer {
         let name = file_name(&entry.path);
         let selection = 0..stem_length(&name, entry.is_dir);
         let kind = EditKind::Rename {
-            path: entry.path.clone(),
+            path: entry.path.to_path_buf(),
             original_name: name.clone(),
         };
         self.begin_edit(kind, folder, name, selection, window, cx);
@@ -90,7 +90,7 @@ impl Explorer {
     pub(in crate::explorer) fn edit_for(&self, entry: &VisibleEntry) -> Option<&InlineEdit> {
         let edit = self.editing.as_ref()?;
         let is_edited = match &edit.kind {
-            EditKind::Rename { path, .. } => !entry.is_draft && &entry.path == path,
+            EditKind::Rename { path, .. } => !entry.is_draft && *entry.path == **path,
             EditKind::NewFile | EditKind::NewFolder => entry.is_draft,
         };
         is_edited.then_some(edit)

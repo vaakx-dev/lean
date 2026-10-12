@@ -4,6 +4,7 @@ use gpui_kit::*;
 use super::TerminalView;
 
 pub(super) enum TerminalStatus {
+    Starting,
     Running,
     Exited(Option<i32>),
     Failed(SharedString),
@@ -25,6 +26,7 @@ impl TerminalView {
 
 fn status_message(status: &TerminalStatus) -> Option<String> {
     match status {
+        TerminalStatus::Starting => Some("Starting the shell...".to_owned()),
         TerminalStatus::Running => None,
         TerminalStatus::Exited(Some(code)) if *code != 0 => Some(format!(
             "Process exited with code {code}. Press Enter to restart."

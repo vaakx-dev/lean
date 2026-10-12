@@ -42,7 +42,7 @@ impl Explorer {
         let edit = self.edit_for(entry);
         let is_editing = edit.is_some();
         let is_selected =
-            !is_editing && !entry.is_draft && self.selected.as_ref() == Some(&entry.path);
+            !is_editing && !entry.is_draft && self.selected.as_deref() == Some(&*entry.path);
         let is_dimmed = entry.is_ignored && self.options.dims_ignored();
         h_flex()
             .id(index)
@@ -105,7 +105,7 @@ impl Explorer {
         cx: &App,
     ) -> AnyElement {
         if entry.is_dir {
-            let is_expanded = !entry.is_draft && self.expanded.contains(&entry.path);
+            let is_expanded = !entry.is_draft && self.expanded.contains(&*entry.path);
             return Icon::empty()
                 .path(chevron_path(is_expanded))
                 .size_4()
@@ -128,7 +128,7 @@ impl Explorer {
     fn select_for_context_menu(&mut self, index: usize, cx: &mut Context<Self>) {
         cx.stop_propagation();
         if let Some(entry) = self.visible.get(index).filter(|entry| !entry.is_draft) {
-            self.selected = Some(entry.path.clone());
+            self.selected = Some(entry.path.to_path_buf());
             cx.notify();
         }
     }
@@ -143,7 +143,7 @@ impl Explorer {
         let Some(entry) = self.visible.get(index).filter(|entry| !entry.is_draft) else {
             return;
         };
-        let path = entry.path.clone();
+        let path = entry.path.to_path_buf();
         let is_dir = entry.is_dir;
         window.focus(&self.focus_handle, cx);
         self.selected = Some(path.clone());

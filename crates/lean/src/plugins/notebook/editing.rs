@@ -5,6 +5,7 @@ use gpui_kit::*;
 use super::Notebook;
 use super::cell::CellId;
 use super::document::{CellData, CellKind};
+use super::output::release_outputs;
 use crate::plugins::FileViewEvent;
 
 impl Notebook {
@@ -41,7 +42,7 @@ impl Notebook {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let cell = self.create_cell(CellData::new(kind), window, cx);
+        let cell = self.create_cell(CellData::new(kind), Vec::new(), window, cx);
         let id = cell.id;
         let index = index.min(self.cells.len());
         self.cells.insert(index, cell);
@@ -66,7 +67,8 @@ impl Notebook {
         let Some(index) = self.index_of(id) else {
             return;
         };
-        self.cells.remove(index);
+        let cell = self.cells.remove(index);
+        release_outputs(cell.outputs, cx);
         self.splice_rows(index..index + 1, 0..0, cx);
         self.queue.retain(|queued| *queued != id);
         self.selected = self
@@ -104,7 +106,7 @@ impl Notebook {
         if let Some(cell) = self.cell_mut(id)
             && !cell.is_pending()
         {
-            cell.reset();
+            cell.reset(cx);
             self.remeasure_cell(id);
             cx.emit(FileViewEvent::Edited);
             cx.notify();
@@ -113,7 +115,7 @@ impl Notebook {
 
     pub(super) fn clear_all_outputs(&mut self, cx: &mut Context<Self>) {
         for cell in self.cells.iter_mut().filter(|cell| !cell.is_pending()) {
-            cell.reset();
+            cell.reset(cx);
         }
         self.list_state.remeasure();
         cx.emit(FileViewEvent::Edited);
@@ -135,7 +137,7 @@ impl Notebook {
     pub(super) fn stop_editing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for (index, cell) in self.cells.iter_mut().enumerate() {
             if cell.kind == CellKind::Markdown && cell.editing {
-                cell.editing = false;
+                cell.finish_editing(cx);
                 self.list_state.remeasure_items(index..index + 1);
             }
         }

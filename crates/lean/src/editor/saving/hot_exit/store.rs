@@ -1,19 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use gpui_kit::App;
 use gpui_kit::component::Rope;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::storage::{QueuedWriter, state_file};
+use crate::storage::state_file;
 
-static WRITER: QueuedWriter = QueuedWriter::new();
-
-#[derive(Serialize, Deserialize)]
-pub(super) struct Backup {
-    root: PathBuf,
-    pub(super) files: Vec<BackupFile>,
-}
+const BACKUP_EXTENSION: &str = "json";
 
 #[derive(Serialize, Deserialize)]
 pub(in crate::editor) struct BackupFile {
@@ -28,58 +21,40 @@ pub(in crate::editor) struct BackupFile {
 
 #[derive(Clone)]
 pub(super) struct BackupStore {
-    root: PathBuf,
-    file: PathBuf,
+    folder: PathBuf,
 }
 
 impl BackupStore {
     pub(super) fn for_project(root: &Path) -> Option<Self> {
-        let name = format!("unsaved/{:016x}.json", path_hash(root));
+        let name = format!("unsaved/{:016x}", path_hash(root));
         Some(Self {
-            root: root.to_path_buf(),
-            file: state_file(&name)?,
+            folder: state_file(&name)?,
         })
     }
 
-    pub(super) fn exists(&self) -> bool {
-        self.file.exists()
+    pub(super) fn file_for(&self, path: &Path) -> PathBuf {
+        self.folder
+            .join(format!("{:016x}.{BACKUP_EXTENSION}", path_hash(path)))
     }
 
-    pub(super) fn read(&self) -> Option<Backup> {
-        let bytes = match fs::read(&self.file) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                log::debug!(
-                    "no unsaved files to restore from {}: {error}",
-                    self.file.display()
-                );
-                return None;
-            }
+    pub(super) fn stored_files(&self) -> Vec<PathBuf> {
+        let Ok(entries) = fs::read_dir(&self.folder) else {
+            return Vec::new();
         };
-        match serde_json::from_slice::<Backup>(&bytes) {
-            Ok(backup) if backup.root == self.root => Some(backup),
-            Ok(_) => None,
-            Err(error) => {
-                log::warn!("failed to read {}: {error}", self.file.display());
-                None
-            }
-        }
+        entries
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|file| file.extension().is_some_and(|ext| ext == BACKUP_EXTENSION))
+            .collect()
     }
+}
 
-    pub(super) fn save(&self, files: Vec<BackupFile>, cx: &App) {
-        WRITER.save(self.file.clone(), self.backup(files), cx);
-    }
-
-    pub(super) fn save_now(&self, files: Vec<BackupFile>) {
-        WRITER.save_now(&self.file, &self.backup(files));
-    }
-
-    fn backup(&self, files: Vec<BackupFile>) -> Backup {
-        Backup {
-            root: self.root.clone(),
-            files,
-        }
-    }
+pub(super) fn read_backup(file: &Path) -> Option<BackupFile> {
+    let bytes = fs::read(file)
+        .inspect_err(|error| log::warn!("failed to read {}: {error}", file.display()))
+        .ok()?;
+    serde_json::from_slice(&bytes)
+        .inspect_err(|error| log::warn!("failed to parse {}: {error}", file.display()))
+        .ok()
 }
 
 fn path_hash(path: &Path) -> u64 {

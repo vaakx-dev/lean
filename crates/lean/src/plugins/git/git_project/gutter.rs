@@ -1,15 +1,18 @@
+mod compute;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use gpui_kit::component::{ActiveTheme as _, Rope};
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{App, AppContext as _, Context, EntityId, Task};
 
 use super::GitProject;
 use crate::plugins::GutterMarker;
-use crate::plugins::git::diff::{DiffBase, Hunk, gutter_markers, hunks_for};
+use crate::plugins::git::diff::{GutterBase, Hunk, gutter_markers};
 use crate::plugins::git::repo::FileStatus;
 use crate::plugins::git::settings::{GUTTER_BASE, GUTTER_ENABLED};
+use compute::{GutterBatch, GutterJob, GutterResult};
 
 const DEBOUNCE: Duration = Duration::from_millis(200);
 
@@ -18,19 +21,9 @@ pub(super) struct GutterSync {
     pending: HashSet<PathBuf>,
     all: bool,
     applied: HashMap<PathBuf, (EntityId, Vec<Hunk>)>,
+    bases: HashMap<PathBuf, GutterBase>,
+    generation: u64,
     task: Option<Task<()>>,
-}
-
-struct GutterJob {
-    path: PathBuf,
-    view: EntityId,
-    text: Option<Rope>,
-}
-
-struct GutterResult {
-    path: PathBuf,
-    view: EntityId,
-    hunks: Vec<Hunk>,
 }
 
 impl GitProject {
@@ -39,33 +32,65 @@ impl GitProject {
         self.schedule_gutter(cx);
     }
 
+    pub(super) fn gutter_base_changed(&mut self, cx: &mut Context<Self>) {
+        self.forget_gutter_bases();
+        self.repaint_gutter(cx);
+    }
+
     pub(super) fn refresh_gutter(&mut self, cx: &mut Context<Self>) {
+        self.forget_gutter_bases();
         self.gutter.all = true;
         self.schedule_gutter(cx);
     }
 
-    pub(super) fn refresh_gutter_for(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.gutter.pending.insert(path);
-        self.schedule_gutter(cx);
+    pub(super) fn refresh_gutter_for(&mut self, path: &Path, cx: &mut Context<Self>) {
+        if GUTTER_ENABLED.get(cx) && self.is_tracked(path) {
+            self.gutter.pending.insert(path.to_path_buf());
+            self.schedule_gutter(cx);
+        }
+    }
+
+    pub(super) fn refresh_gutter_where(
+        &mut self,
+        touched: impl Fn(&Path) -> bool,
+        cx: &mut Context<Self>,
+    ) {
+        if !GUTTER_ENABLED.get(cx) {
+            return;
+        }
+        let paths: Vec<PathBuf> = self
+            .gutter
+            .applied
+            .keys()
+            .filter(|path| touched(path.as_path()) && self.is_tracked(path.as_path()))
+            .cloned()
+            .collect();
+        if !paths.is_empty() {
+            self.gutter.pending.extend(paths);
+            self.schedule_gutter(cx);
+        }
     }
 
     pub(super) fn schedule_gutter(&mut self, cx: &mut Context<Self>) {
         self.gutter.task = Some(cx.spawn(async move |git, cx| {
             cx.background_executor().timer(DEBOUNCE).await;
-            let Ok((workdir, base, jobs)) = git.update(cx, |git, cx| git.gutter_jobs(cx)) else {
+            let Ok(batch) = git.update(cx, |git, cx| git.gutter_batch(cx)) else {
                 return;
             };
-            let results = cx
-                .background_spawn(async move { compute_hunks(workdir.as_deref(), base, jobs) })
-                .await;
-            git.update(cx, |git, cx| git.apply_gutter(results, cx)).ok();
+            let generation = batch.generation;
+            let results = cx.background_spawn(async move { batch.compute() }).await;
+            git.update(cx, |git, cx| git.apply_gutter(generation, results, cx))
+                .ok();
         }));
     }
 
-    fn gutter_jobs(&self, cx: &App) -> (Option<PathBuf>, DiffBase, Vec<GutterJob>) {
-        let workdir = self.state.as_ref().map(|state| state.workdir.clone());
+    fn forget_gutter_bases(&mut self) {
+        self.gutter.bases.clear();
+        self.gutter.generation += 1;
+    }
+
+    fn gutter_batch(&self, cx: &App) -> GutterBatch {
         let enabled = GUTTER_ENABLED.get(cx);
-        let base = GUTTER_BASE.get(cx);
         let jobs = self
             .editor_area
             .read(cx)
@@ -78,15 +103,25 @@ impl GitProject {
                 if !wanted {
                     return None;
                 }
-                let text = view.text(cx)?;
+                let text = (enabled && self.is_tracked(path))
+                    .then(|| view.text(cx))
+                    .flatten();
                 Some(GutterJob {
                     path: path.to_path_buf(),
                     view: id,
-                    text: (enabled && self.is_tracked(path)).then_some(text),
+                    base: text
+                        .as_ref()
+                        .and_then(|_| self.gutter.bases.get(path).cloned()),
+                    text,
                 })
             })
             .collect();
-        (workdir, base, jobs)
+        GutterBatch {
+            workdir: self.state.as_ref().map(|state| state.workdir.clone()),
+            base: GUTTER_BASE.get(cx),
+            generation: self.gutter.generation,
+            jobs,
+        }
     }
 
     fn is_tracked(&self, path: &Path) -> bool {
@@ -96,66 +131,59 @@ impl GitProject {
         })
     }
 
-    fn apply_gutter(&mut self, results: Vec<GutterResult>, cx: &mut Context<Self>) {
+    fn apply_gutter(
+        &mut self,
+        generation: u64,
+        results: Vec<GutterResult>,
+        cx: &mut Context<Self>,
+    ) {
         self.gutter.pending.clear();
         self.gutter.all = false;
-        let changed: Vec<GutterResult> = results
-            .into_iter()
-            .filter(|result| {
-                self.gutter.applied.get(&result.path) != Some(&(result.view, result.hunks.clone()))
-            })
-            .collect();
-        let markers: Vec<(&Path, EntityId, Vec<GutterMarker>)> = changed
+        let current = generation == self.gutter.generation;
+        let mut changed = Vec::new();
+        for GutterResult {
+            path,
+            view,
+            hunks,
+            loaded_base,
+        } in results
+        {
+            if current && let Some(base) = loaded_base {
+                self.gutter.bases.insert(path.clone(), base);
+            }
+            let unchanged = self
+                .gutter
+                .applied
+                .get(&path)
+                .is_some_and(|(applied_view, applied)| *applied_view == view && *applied == hunks);
+            if !unchanged {
+                changed.push((path, view, hunks));
+            }
+        }
+        let theme = cx.theme();
+        let mut markers: HashMap<EntityId, (&Path, Vec<GutterMarker>)> = changed
             .iter()
-            .map(|result| {
-                let markers = gutter_markers(&result.hunks, cx.theme());
-                (result.path.as_path(), result.view, markers)
-            })
+            .map(|(path, view, hunks)| (*view, (path.as_path(), gutter_markers(hunks, theme))))
             .collect();
-        let open_paths = self.editor_area.update(cx, |area, cx| {
+        let open_paths = self.editor_area.update(cx, move |area, cx| {
             for (path, view) in area.open_file_views() {
-                let id = view.view().entity_id();
-                if let Some((_, _, markers)) = markers
-                    .iter()
-                    .find(|(changed, view, _)| *changed == path && *view == id)
+                if let Some((_, view_markers)) = markers
+                    .remove(&view.view().entity_id())
+                    .filter(|(changed, _)| *changed == path)
                 {
-                    view.set_gutter_markers(markers.clone(), cx);
+                    view.set_gutter_markers(view_markers, cx);
                 }
             }
             area.open_paths()
         });
-        for result in changed {
-            self.gutter
-                .applied
-                .insert(result.path, (result.view, result.hunks));
+        for (path, view, hunks) in changed {
+            self.gutter.applied.insert(path, (view, hunks));
         }
         self.gutter
             .applied
             .retain(|path, _| open_paths.contains(path));
+        self.gutter
+            .bases
+            .retain(|path, _| open_paths.contains(path));
     }
-}
-
-fn compute_hunks(
-    workdir: Option<&Path>,
-    base: DiffBase,
-    jobs: Vec<GutterJob>,
-) -> Vec<GutterResult> {
-    jobs.into_iter()
-        .map(|job| {
-            let hunks = match (workdir, job.text) {
-                (Some(workdir), Some(text)) => {
-                    hunks_for(workdir, &job.path, &text.to_string(), base).unwrap_or_else(|error| {
-                        log::debug!("failed to diff {}: {error:#}", job.path.display());
-                        Vec::new()
-                    })
-                }
-                _ => Vec::new(),
-            };
-            GutterResult {
-                path: job.path,
-                view: job.view,
-                hunks,
-            }
-        })
-        .collect()
 }

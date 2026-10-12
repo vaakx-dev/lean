@@ -4,21 +4,20 @@ use std::time::Duration;
 
 use gpui_kit::App;
 use notify::Event;
+use serde_json::{Map, Value};
 
 use super::global::{Settings, replace_all};
 use super::{WRITER, load};
-use crate::watcher::{FolderWatch, is_noise};
+use crate::watcher::{is_noise, reload_on_change};
 
 const RELOAD_DELAY: Duration = Duration::from_millis(150);
+
+type Loaded = Option<Result<Map<String, Value>, String>>;
 
 pub(super) fn start(file: PathBuf, cx: &mut App) {
     let Some(folder) = file.parent().map(Path::to_path_buf) else {
         return;
     };
-    if let Err(error) = std::fs::create_dir_all(&folder) {
-        log::warn!("failed to create {}: {error}", folder.display());
-        return;
-    }
     let Some(name) = file.file_name().map(OsString::from) else {
         return;
     };
@@ -29,30 +28,18 @@ pub(super) fn start(file: PathBuf, cx: &mut App) {
                 .iter()
                 .any(|path| path.file_name() == Some(name.as_os_str()))
     };
-    let mut changes = match FolderWatch::new(RELOAD_DELAY, is_settings_change) {
-        Ok(changes) => changes,
-        Err(error) => {
-            log::warn!("failed to watch {}: {error}", file.display());
-            return;
-        }
-    };
-    if let Err(error) = changes.watch(&folder) {
-        log::warn!("failed to watch {}: {error}", folder.display());
-        return;
-    }
-    let task = cx.spawn(async move |cx| {
-        while changes.next_change(cx).await {
-            cx.update(|cx| reload(&file, cx));
-        }
-    });
-    cx.global_mut::<Settings>().watcher = Some(task);
+    let read_file = file.clone();
+    let read = move || WRITER.is_idle().then(|| load::read(&read_file));
+    let reload = move |loaded: Loaded, cx: &mut App| apply(&file, loaded, cx);
+    let task = reload_on_change(&folder, RELOAD_DELAY, is_settings_change, read, reload, cx);
+    cx.global_mut::<Settings>().watcher = task;
 }
 
-fn reload(file: &Path, cx: &mut App) {
-    if !WRITER.is_idle() {
+fn apply(file: &Path, loaded: Loaded, cx: &mut App) {
+    let Some(loaded) = loaded.filter(|_| WRITER.is_idle()) else {
         return;
-    }
-    match load::read(file) {
+    };
+    match loaded {
         Ok(values) => replace_all(values, cx),
         Err(error) => log::warn!("ignoring changes to {}: {error}", file.display()),
     }

@@ -6,8 +6,8 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::HistoryEntry;
 use super::graph_paint::graph_column;
+use crate::plugins::git::repo::CommitSummary;
 use crate::plugins::git::source_control::SourceControl;
 use crate::plugins::git::source_control::rows::{clickable_row, row_container};
 
@@ -30,13 +30,12 @@ impl SourceControl {
     ) -> AnyElement {
         let theme = cx.theme();
         let row = row_container(index, theme).pl_2().pr_2();
-        let Some(entry) = self.history.entries.get(entry_index) else {
+        let Some((commit, graph)) = self.history.entry(entry_index) else {
             return row.into_any_element();
         };
-        let commit = &entry.commit;
-        let tooltip = commit_tooltip(entry);
+        let tooltip = commit_tooltip(commit);
         let shows_author = self.list_width() >= AUTHOR_MIN_LIST_WIDTH;
-        row.child(graph_column(Rc::clone(&entry.graph), self.history.lanes))
+        row.child(graph_column(Rc::clone(graph), self.history.lanes))
             .child(
                 div()
                     .flex_1()
@@ -63,7 +62,7 @@ impl SourceControl {
                     .text_color(theme.muted_foreground)
                     .child(relative_time(commit.time)),
             )
-            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+            .tooltip(move |window, cx| Tooltip::new(tooltip()).build(window, cx))
             .into_any_element()
     }
 
@@ -96,13 +95,11 @@ impl SourceControl {
     }
 }
 
-fn commit_tooltip(entry: &HistoryEntry) -> SharedString {
-    let commit = &entry.commit;
-    format!(
-        "{}\n\n{} · {}",
-        commit.message, commit.author, commit.short_id
-    )
-    .into()
+fn commit_tooltip(commit: &CommitSummary) -> impl Fn() -> SharedString + 'static {
+    let message = commit.message.clone();
+    let author = commit.author.clone();
+    let short_id = commit.short_id.clone();
+    move || format!("{message}\n\n{author} · {short_id}").into()
 }
 
 fn relative_time(timestamp: i64) -> String {

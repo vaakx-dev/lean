@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{ActiveTheme as _, Icon, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, h_flex};
 use gpui_kit::*;
 
+use crate::plugins::media::empty_state::empty_state;
 use crate::plugins::media::picture::{Fit, picture};
 
 const PADDING: Pixels = px(16.);
@@ -39,7 +40,7 @@ impl SvgPreview {
             Some(image) => picture("svg-preview", image, Fit::Contain, cx)
                 .size_full()
                 .into_any_element(),
-            None => empty_preview(self.error.is_some(), cx).into_any_element(),
+            None => empty_state(placeholder(self.error.is_some()), cx).into_any_element(),
         };
         div()
             .relative()
@@ -56,30 +57,12 @@ impl SvgPreview {
     }
 }
 
-fn empty_preview(invalid: bool, cx: &App) -> Div {
-    let theme = cx.theme();
-    let message = if invalid {
+fn placeholder(invalid: bool) -> &'static str {
+    if invalid {
         "This SVG can't be rendered."
     } else {
         "Rendering preview…"
-    };
-    v_flex()
-        .size_full()
-        .items_center()
-        .justify_center()
-        .gap_3()
-        .child(
-            Icon::empty()
-                .path("icons/file-image.svg")
-                .size(px(48.))
-                .text_color(theme.muted_foreground),
-        )
-        .child(
-            div()
-                .text_sm()
-                .text_color(theme.muted_foreground)
-                .child(message),
-        )
+    }
 }
 
 fn invalid_badge(error: SharedString, cx: &App) -> Stateful<Div> {

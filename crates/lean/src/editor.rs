@@ -39,6 +39,7 @@ pub(crate) enum EditorAreaEvent {
     FileRecreated(PathBuf),
     OpenFilesChanged,
     Saved,
+    StatusChanged,
 }
 
 pub(crate) struct EditorArea {

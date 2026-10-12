@@ -1,26 +1,9 @@
-use std::ops::Range;
-
-use gpui_kit::component::input::EditorState;
+use gpui_kit::component::input::{EditorState, Rope, RopeExt as _};
 use gpui_kit::*;
 
 use crate::editor::file_text::LineEnding;
+use crate::editor::text_file::{TextEdit, apply_edits};
 use crate::files::settings::SaveFormat;
-
-struct FormattedText {
-    text: String,
-    removed: Vec<Range<usize>>,
-}
-
-impl FormattedText {
-    fn map_offset(&self, offset: usize) -> usize {
-        let removed: usize = self
-            .removed
-            .iter()
-            .map(|range| range.end.min(offset).saturating_sub(range.start))
-            .sum();
-        offset - removed
-    }
-}
 
 pub(in crate::editor) fn format_for_save(
     editor: &Entity<EditorState>,
@@ -30,58 +13,43 @@ pub(in crate::editor) fn format_for_save(
     cx: &mut App,
 ) -> LineEnding {
     if format.changes_text() {
-        apply_text_format(editor, format, window, cx);
+        let edits = format_edits(editor.read(cx).text(), format);
+        if !edits.is_empty() {
+            editor.update(cx, |editor, cx| apply_edits(editor, &edits, window, cx));
+        }
     }
     line_ending.for_save(format.line_endings)
 }
 
-fn apply_text_format(
-    editor: &Entity<EditorState>,
-    format: &SaveFormat,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    let text = String::from(editor.read(cx).text());
-    let Some(formatted) = format_text(&text, format) else {
-        return;
+fn format_edits(text: &Rope, format: &SaveFormat) -> Vec<TextEdit> {
+    let (mut edits, last_line_len) = if format.trim_trailing_whitespace {
+        trailing_whitespace(text)
+    } else {
+        (Vec::new(), text.line_len(text.lines_len() - 1))
     };
-    editor.update(cx, |editor, cx| {
-        let selection = editor.selected_range();
-        let scroll = editor.scroll_offset();
-        let selection = formatted.map_offset(selection.start)..formatted.map_offset(selection.end);
-        editor.replace_all(formatted.text, window, cx);
-        editor.set_selected_range(selection, cx);
-        editor.set_scroll_offset(scroll, cx);
-    });
+    if format.final_newline && last_line_len > 0 {
+        edits.push((text.len()..text.len(), "\n".to_owned()));
+    }
+    edits
 }
 
-fn format_text(text: &str, format: &SaveFormat) -> Option<FormattedText> {
-    let mut output = String::with_capacity(text.len() + 1);
-    let mut removed = Vec::new();
+fn trailing_whitespace(text: &Rope) -> (Vec<TextEdit>, usize) {
+    let mut edits = Vec::new();
     let mut line_start = 0;
-    for line in text.split_inclusive('\n') {
-        let (content, newline) = match line.strip_suffix('\n') {
-            Some(content) => (content, "\n"),
-            None => (line, ""),
-        };
-        let kept = if format.trim_trailing_whitespace {
-            content.trim_end()
-        } else {
-            content
-        };
-        if kept.len() < content.len() {
-            removed.push(line_start + kept.len()..line_start + content.len());
+    let mut last_line_len = 0;
+    for line in text.iter_lines() {
+        let line_end = line_start + line.len();
+        let trailing: usize = line
+            .chars_at(line.len())
+            .reversed()
+            .take_while(|character| character.is_whitespace())
+            .map(char::len_utf8)
+            .sum();
+        if trailing > 0 {
+            edits.push((line_end - trailing..line_end, String::new()));
         }
-        output.push_str(kept);
-        output.push_str(newline);
-        line_start += line.len();
+        last_line_len = line.len() - trailing;
+        line_start = line_end + 1;
     }
-    let adds_newline = format.final_newline && !output.is_empty() && !output.ends_with('\n');
-    if adds_newline {
-        output.push('\n');
-    }
-    (adds_newline || !removed.is_empty()).then_some(FormattedText {
-        text: output,
-        removed,
-    })
+    (edits, last_line_len)
 }

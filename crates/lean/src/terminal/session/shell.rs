@@ -4,12 +4,10 @@ use std::path::Path;
 use alacritty_terminal::tty::{Options, Shell};
 use gpui_kit::{App, SharedString};
 
-use crate::terminal::settings::{ENVIRONMENT, SHELL_ARGS, SHELL_LOGIN, SHELL_PROGRAM};
+use crate::terminal::settings::{
+    ENVIRONMENT, SHELL_ARGS, SHELL_LOGIN, SHELL_PROGRAM, default_shell_program,
+};
 
-#[cfg(not(windows))]
-const FALLBACK_SHELL: &str = "/bin/sh";
-#[cfg(windows)]
-const WINDOWS_SHELL: &str = "powershell.exe";
 const LOGIN_FLAG: &str = "-l";
 
 pub(crate) fn shell_options(
@@ -69,19 +67,6 @@ fn shell_program(cx: &App) -> String {
 fn shell_args(cx: &App) -> Vec<String> {
     let login = (cfg!(not(windows)) && SHELL_LOGIN.get(cx)).then(|| LOGIN_FLAG.to_owned());
     login.into_iter().chain(SHELL_ARGS.get(cx)).collect()
-}
-
-#[cfg(windows)]
-pub(crate) fn default_shell_program() -> String {
-    WINDOWS_SHELL.to_owned()
-}
-
-#[cfg(not(windows))]
-pub(crate) fn default_shell_program() -> String {
-    std::env::var("SHELL")
-        .ok()
-        .filter(|shell| !shell.is_empty())
-        .unwrap_or_else(|| FALLBACK_SHELL.to_owned())
 }
 
 fn shell_environment() -> HashMap<String, String> {

@@ -1,11 +1,12 @@
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gpui_kit::SharedString;
 
 use super::{LANGUAGE, PYTHON_EXECUTABLE, child_dirs, folder_name, is_inherited, path_string};
 use crate::toolchain::Toolchain;
+#[cfg(feature = "terminal")]
 use crate::toolchain::shell_activation::{
     ShellActivation, fish_quote, posix_quote, powershell_quote,
 };
@@ -22,8 +23,16 @@ const BIN_DIR: &str = "Scripts";
 pub(super) fn discover(root: &Path, depth: u32) -> Vec<Toolchain> {
     let mut toolchains = Vec::new();
     collect(root, depth, &mut toolchains);
-    toolchains.sort_by(|left, right| left.name.cmp(&right.name));
-    toolchains
+    sorted_by_name(toolchains)
+}
+
+pub(super) fn read_all(folders: &[PathBuf]) -> Vec<Toolchain> {
+    sorted_by_name(
+        folders
+            .iter()
+            .filter_map(|folder| read_venv(folder))
+            .collect(),
+    )
 }
 
 pub(super) fn discover_inherited() -> Option<Toolchain> {
@@ -51,6 +60,11 @@ fn collect(folder: &Path, depth: u32, found: &mut Vec<Toolchain>) {
     }
 }
 
+fn sorted_by_name(mut toolchains: Vec<Toolchain>) -> Vec<Toolchain> {
+    toolchains.sort_by(|left, right| left.name.cmp(&right.name));
+    toolchains
+}
+
 fn is_skipped(folder: &Path) -> bool {
     folder
         .file_name()
@@ -73,6 +87,7 @@ fn read_venv(path: &Path) -> Option<Toolchain> {
         kind: "venv",
         version: config_version(&prefix),
         variables: vec![(PREFIX_VARIABLE.to_owned(), path_string(&prefix))],
+        #[cfg(feature = "terminal")]
         activation: Some(activation(&bin_dir)),
         is_inherited: is_inherited(PREFIX_VARIABLE, &prefix),
         bin_dirs: vec![bin_dir],
@@ -80,6 +95,7 @@ fn read_venv(path: &Path) -> Option<Toolchain> {
     })
 }
 
+#[cfg(feature = "terminal")]
 fn activation(bin_dir: &Path) -> ShellActivation {
     let script = |name: &str| path_string(&bin_dir.join(name));
     ShellActivation {

@@ -5,6 +5,7 @@ use anyhow::{Result, anyhow};
 use gpui_kit::*;
 
 use super::SvgViewer;
+use super::aspect::aspect_ratio;
 
 const PREVIEW_PIXELS: i32 = 1536;
 
@@ -18,10 +19,8 @@ impl SvgViewer {
             };
             let rendered = match text {
                 Some(text) => {
-                    cx.background_spawn(async move {
-                        rasterize(&renderer, String::from(&text).as_bytes())
-                    })
-                    .await
+                    cx.background_spawn(async move { rasterize(&renderer, &String::from(&text)) })
+                        .await
                 }
                 None => Err(anyhow!("The file isn't valid UTF-8 text.")),
             };
@@ -35,16 +34,22 @@ impl SvgViewer {
     }
 }
 
-fn rasterize(renderer: &SvgRenderer, bytes: &[u8]) -> Result<Arc<RenderImage>> {
-    let svg = renderer.parse_svg(bytes)?;
+fn rasterize(renderer: &SvgRenderer, text: &str) -> Result<Arc<RenderImage>> {
+    let svg = renderer.parse_svg(text.as_bytes())?;
+    if let Some(ratio) = aspect_ratio(text) {
+        return render_at_width(renderer, &svg, fitted_width(ratio));
+    }
     let image = render_at_width(renderer, &svg, PREVIEW_PIXELS)?;
-    let height = image.size(0).height.0;
-    if height <= PREVIEW_PIXELS {
+    let size = image.size(0);
+    if size.height.0 <= PREVIEW_PIXELS {
         return Ok(image);
     }
-    let width = i64::from(PREVIEW_PIXELS) * i64::from(PREVIEW_PIXELS) / i64::from(height);
-    let width = i32::try_from(width).unwrap_or(PREVIEW_PIXELS).max(1);
-    render_at_width(renderer, &svg, width)
+    let ratio = size.height.0 as f32 / size.width.0 as f32;
+    render_at_width(renderer, &svg, fitted_width(ratio))
+}
+
+fn fitted_width(ratio: f32) -> i32 {
+    ((PREVIEW_PIXELS as f32 / ratio.max(1.)) as i32).max(1)
 }
 
 fn render_at_width(

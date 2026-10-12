@@ -26,6 +26,7 @@ pub(crate) fn run(launch: LaunchTarget) {
         theme::init(cx);
         keymap::bind_keys(cx);
         plugins::init(cx);
+        keymap::apply_bindings(cx);
         recent_projects::init(cx);
         updates::init(cx);
         menus::set_menus(cx);

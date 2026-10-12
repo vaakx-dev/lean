@@ -3,7 +3,6 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 use super::Toolchain;
-use crate::terminal::ShellKind;
 
 pub(super) fn activation_environment(
     known: &[Toolchain],
@@ -47,12 +46,4 @@ fn clear_inherited_variables(known: &[Toolchain], environment: &mut HashMap<Stri
             environment.entry(name.clone()).or_default();
         }
     }
-}
-
-pub(super) fn activation_command(active: &[&Toolchain], shell: ShellKind) -> Option<String> {
-    let commands: Vec<&str> = active
-        .iter()
-        .filter_map(|toolchain| toolchain.activation.as_ref()?.command(shell))
-        .collect();
-    (!commands.is_empty()).then(|| format!(" {}", commands.join("; ")))
 }

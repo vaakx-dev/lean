@@ -9,6 +9,7 @@ use super::Notebook;
 use super::cell::{CellId, RunState};
 use super::document::CellKind;
 use super::kernel::{Kernel, KernelEvent, KernelSpec, Reply, kernel_program};
+use super::output::{Output, OutputDecoder};
 use super::settings::{INTERPRETER, STARTUP_TIMEOUT_S, STOP_ON_ERROR};
 use crate::plugins::FileViewEvent;
 use crate::toolchain::ToolchainsEvent;
@@ -38,7 +39,7 @@ impl Notebook {
                 continue;
             };
             match cell.kind {
-                CellKind::Markdown => cell.editing = false,
+                CellKind::Markdown => cell.finish_editing(cx),
                 CellKind::Code if !cell.is_pending() => {
                     cell.run_state = RunState::Queued;
                     self.queue.push_back(id);
@@ -128,6 +129,8 @@ impl Notebook {
         }
         if !self.toolchains.read(cx).is_discovered() {
             self.awaiting_toolchains = true;
+            self.toolchains
+                .update(cx, |toolchains, cx| toolchains.ensure_discovered(cx));
             return;
         }
         let environment = self.toolchains.read(cx).environment();
@@ -161,10 +164,25 @@ impl Notebook {
 
     fn listen(mut events: UnboundedReceiver<KernelEvent>, cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |notebook, cx| {
-            while let Some(event) = events.next().await {
-                let stopped = matches!(event, KernelEvent::Stopped(_));
+            while let Some(first) = events.next().await {
+                let mut batch = vec![first];
+                while let Ok(event) = events.try_recv() {
+                    batch.push(event);
+                }
+                let stopped = batch
+                    .iter()
+                    .any(|event| matches!(event, KernelEvent::Stopped(_)));
+                let decoder = cx.update(|cx| OutputDecoder::new(cx));
+                let batch = cx
+                    .background_spawn(async move {
+                        batch
+                            .into_iter()
+                            .map(|event| event.map_output(|json| decoder.decode(json)))
+                            .collect::<Vec<_>>()
+                    })
+                    .await;
                 let update =
-                    notebook.update(cx, |notebook, cx| notebook.handle_kernel_event(event, cx));
+                    notebook.update(cx, |notebook, cx| notebook.handle_kernel_events(batch, cx));
                 if update.is_err() || stopped {
                     break;
                 }
@@ -172,49 +190,64 @@ impl Notebook {
         })
     }
 
-    fn handle_kernel_event(&mut self, event: KernelEvent, cx: &mut Context<Self>) {
-        match event {
-            KernelEvent::Ready => {
-                if let Some(session) = &mut self.session {
-                    session.ready = true;
+    fn handle_kernel_events(&mut self, batch: Vec<KernelEvent<Output>>, cx: &mut Context<Self>) {
+        let mut changed = Vec::new();
+        for event in batch {
+            match event {
+                KernelEvent::Ready => {
+                    if let Some(session) = &mut self.session {
+                        session.ready = true;
+                    }
+                    self.pump(cx);
                 }
-                self.pump(cx);
-            }
-            KernelEvent::Reply { request, reply } => self.apply_reply(&request, reply, cx),
-            KernelEvent::Stopped(error) => {
-                if let Some(error) = &error {
-                    log::warn!("notebook kernel stopped: {error}");
+                KernelEvent::Reply { request, reply } => {
+                    if let Some(id) = self.apply_reply(&request, reply, cx)
+                        && !changed.contains(&id)
+                    {
+                        changed.push(id);
+                    }
                 }
-                self.stop_session();
-                self.kernel_error = error.map(SharedString::from);
+                KernelEvent::Stopped(error) => {
+                    if let Some(error) = &error {
+                        log::warn!("notebook kernel stopped: {error}");
+                    }
+                    self.stop_session();
+                    self.kernel_error = error.map(SharedString::from);
+                }
             }
+        }
+        for id in &changed {
+            self.remeasure_cell(*id);
+        }
+        if !changed.is_empty() {
+            cx.emit(FileViewEvent::Edited);
         }
         cx.emit(FileViewEvent::StatusChanged);
         cx.notify();
     }
 
-    fn apply_reply(&mut self, request: &str, reply: Reply, cx: &mut Context<Self>) {
-        let Some(session) = &mut self.session else {
-            return;
-        };
-        let Some(running) = session
+    fn apply_reply(
+        &mut self,
+        request: &str,
+        reply: Reply<Output>,
+        cx: &mut Context<Self>,
+    ) -> Option<CellId> {
+        let session = self.session.as_mut()?;
+        let running = session
             .running
             .as_ref()
-            .filter(|running| running.request == request)
-        else {
-            return;
-        };
+            .filter(|running| running.request == request)?;
         let (id, started) = (running.cell, running.started);
         if matches!(reply, Reply::Idle) {
             session.running = None;
         }
         let Some(cell) = self.cell_mut(id) else {
             self.pump(cx);
-            return;
+            return None;
         };
         match reply {
-            Reply::Output(json) => cell.push_output(json, cx),
-            Reply::Clear { wait } => cell.clear_outputs(wait),
+            Reply::Output(output) => cell.push_output(output, cx),
+            Reply::Clear { wait } => cell.clear_outputs(wait, cx),
             Reply::ExecutionCount(count) => cell.execution_count = Some(count),
             Reply::Idle => {
                 cell.finish_run(started);
@@ -224,8 +257,7 @@ impl Notebook {
                 self.pump(cx);
             }
         }
-        self.remeasure_cell(id);
-        cx.emit(FileViewEvent::Edited);
+        Some(id)
     }
 
     fn pump(&mut self, cx: &mut Context<Self>) {
@@ -239,8 +271,8 @@ impl Notebook {
             let Some(cell) = self.cell_mut(id) else {
                 continue;
             };
-            let code = cell.editor.read(cx).value().to_string();
-            cell.start_run();
+            let code = cell.editor.read(cx).text().to_string();
+            cell.start_run(cx);
             self.remeasure_cell(id);
             let Some(session) = &mut self.session else {
                 return;

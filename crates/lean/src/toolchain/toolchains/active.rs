@@ -31,9 +31,18 @@ impl Toolchains {
     }
 
     pub(crate) fn active_label(&self, language: &str) -> SharedString {
-        self.active(language)
-            .map(Toolchain::label)
+        self.active_labels
+            .get(language)
+            .cloned()
             .unwrap_or_else(|| NO_TOOLCHAIN_LABEL.into())
+    }
+
+    pub(super) fn update_active_labels(&mut self) {
+        self.active_labels = self
+            .languages()
+            .into_iter()
+            .filter_map(|language| Some((language, self.active(language)?.label())))
+            .collect();
     }
 
     pub(super) fn active_prefix(&self, language: &str) -> Option<PathBuf> {

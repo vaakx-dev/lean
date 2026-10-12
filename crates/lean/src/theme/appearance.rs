@@ -12,6 +12,8 @@ use super::settings::{
 };
 use crate::settings::Settings;
 
+const SYSTEM_UI_FONT: &str = ".SystemUIFont";
+
 #[derive(Clone, PartialEq)]
 struct Appearance {
     theme: String,
@@ -69,15 +71,20 @@ fn apply(appearance: &Appearance, cx: &mut App) {
     }
     let (min_font_size, max_font_size) = UI_FONT_SIZE_RANGE;
     let radius = appearance.radius.min(RADIUS_MAX);
-    config.font_family = Some(appearance.font_family.clone().into());
+    if !appearance.font_family.is_empty() {
+        config.font_family = Some(appearance.font_family.clone().into());
+    }
     config.font_size = Some(appearance.font_size.clamp(min_font_size, max_font_size));
     config.radius = Some(radius as usize);
     config.radius_lg = Some((radius + RADIUS_LG_EXTRA) as usize);
     drop_missing_fonts(&mut config, cx);
-    if config.font_family.is_none() {
+    if config.font_family.is_none() && !appearance.font_family.is_empty() {
         config.font_family = base.font_family.clone();
         drop_missing_fonts(&mut config, cx);
     }
+    config
+        .font_family
+        .get_or_insert_with(|| SYSTEM_UI_FONT.into());
     let config = Rc::new(config);
     let scrollbar_mode = appearance.scrollbars.mode();
     Theme::update(cx, |theme| {

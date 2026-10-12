@@ -2,9 +2,10 @@ mod menu;
 mod picker;
 pub(crate) mod settings;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use gpui_kit::{App, Global};
+use gpui_kit::{App, AppContext as _, Global};
 
 use crate::storage::{QueuedWriter, read_state, state_file};
 use settings::RECENT_LIMIT;
@@ -24,16 +25,33 @@ struct RecentProjects {
 impl Global for RecentProjects {}
 
 pub(crate) fn init(cx: &mut App) {
-    let mut paths: Vec<PathBuf> = read_state(FILE_NAME).unwrap_or_default();
-    let count = paths.len();
-    paths.retain(|path| path.is_dir());
-    if paths.len() != count {
-        save(paths.clone(), cx);
-    }
+    let paths: Vec<PathBuf> = read_state(FILE_NAME).unwrap_or_default();
     cx.set_global(RecentProjects {
         current: None,
-        paths,
+        paths: paths.clone(),
     });
+    let missing = cx.background_spawn(async move {
+        paths
+            .into_iter()
+            .filter(|path| !path.is_dir())
+            .collect::<HashSet<PathBuf>>()
+    });
+    cx.spawn(async move |cx| {
+        let missing = missing.await;
+        if !missing.is_empty() {
+            cx.update(|cx| forget_missing(&missing, cx));
+        }
+    })
+    .detach();
+}
+
+fn forget_missing(missing: &HashSet<PathBuf>, cx: &mut App) {
+    let recent = cx.global_mut::<RecentProjects>();
+    recent
+        .paths
+        .retain(|path| !missing.contains(path) || recent.current.as_ref() == Some(path));
+    let paths = recent.paths.clone();
+    save(paths, cx);
 }
 
 pub(crate) fn last_opened(cx: &App) -> Option<PathBuf> {

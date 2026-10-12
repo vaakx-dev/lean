@@ -1,3 +1,4 @@
+mod aspect;
 mod mode;
 mod preview;
 mod refresh;

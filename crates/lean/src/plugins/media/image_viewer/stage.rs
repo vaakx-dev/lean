@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
+use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::scroll::{ScrollableElement as _, ScrollbarAxis};
-use gpui_kit::component::{ActiveTheme as _, Icon, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::keymap::{KEY_CONTEXT, bind_actions};
 use super::zoom::{PADDING, Zoom, displayed_length};
 use super::{Decoded, ImageViewer};
+use crate::plugins::media::empty_state::empty_state;
 use crate::plugins::media::picture::{Fit, picture};
 use crate::plugins::media::settings::{IMAGE_TOOLBAR, WHEEL, WheelAction};
 
@@ -95,9 +96,8 @@ impl Render for ImageViewer {
         let root = bind_actions(root, cx);
         match &self.decoded {
             Decoded::Loading => root,
-            Decoded::Failed(error) => root.child(render_message(
-                "icons/file-image.svg",
-                format!("This image can't be displayed: {error}").into(),
+            Decoded::Failed(error) => root.child(empty_state(
+                format!("This image can't be displayed: {error}"),
                 cx,
             )),
             Decoded::Ready(image) => root
@@ -116,28 +116,4 @@ fn wheel_zooms(action: WheelAction, secondary: bool) -> bool {
         WheelAction::Zoom => true,
         WheelAction::Pan => false,
     }
-}
-
-fn render_message(icon: &'static str, message: SharedString, cx: &App) -> Div {
-    let theme = cx.theme();
-    v_flex()
-        .size_full()
-        .items_center()
-        .justify_center()
-        .gap_3()
-        .p_4()
-        .child(
-            Icon::empty()
-                .path(icon)
-                .size(px(48.))
-                .text_color(theme.muted_foreground),
-        )
-        .child(
-            div()
-                .max_w(px(480.))
-                .text_sm()
-                .text_center()
-                .text_color(theme.muted_foreground)
-                .child(message),
-        )
 }

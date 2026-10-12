@@ -30,9 +30,9 @@ pub(super) fn name_error(
     {
         return Some(error);
     }
-    let exists = siblings.iter().any(|sibling| {
-        is_same_name(&sibling.name, name) && Some(sibling.path.as_path()) != renamed
-    });
+    let exists = siblings
+        .iter()
+        .any(|sibling| is_same_name(&sibling.name, name) && Some(&*sibling.path) != renamed);
     exists.then(|| {
         format!(
             "A file or folder \"{name}\" already exists at this location. Please choose a different name."

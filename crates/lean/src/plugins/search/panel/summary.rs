@@ -34,15 +34,10 @@ impl SearchPanel {
             SearchStatus::Searching | SearchStatus::Done => self.result_count().into(),
         };
         let has_results = !self.results.files.is_empty();
-        let collapse_icon = if self.all_collapsed() {
-            "icons/chevrons-up-down.svg"
+        let (collapse_icon, collapse_tooltip) = if self.all_collapsed() {
+            ("icons/chevrons-up-down.svg", "Expand All")
         } else {
-            "icons/list-collapse.svg"
-        };
-        let collapse_tooltip = if self.all_collapsed() {
-            "Expand All"
-        } else {
-            "Collapse All"
+            ("icons/list-collapse.svg", "Collapse All")
         };
         let limit = self.config.max_results;
         let summary = v_flex()

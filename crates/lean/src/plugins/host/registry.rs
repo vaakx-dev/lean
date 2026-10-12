@@ -6,7 +6,7 @@ use super::contributions::{FileAction, FileViewer, StartService, StatusItem};
 use super::panel::Panel;
 
 #[derive(Default)]
-pub(in crate::plugins) struct Registry {
+pub(crate) struct Registry {
     active_plugins: Vec<&'static str>,
     viewers: Vec<FileViewer>,
     panels: Vec<Panel>,
@@ -22,26 +22,26 @@ impl Registry {
         self.active_plugins.push(id);
     }
 
-    pub(super) fn add_viewer(&mut self, viewer: FileViewer) {
+    pub(in crate::plugins) fn register_viewer(&mut self, viewer: FileViewer) {
         self.viewers.push(viewer);
         self.viewers
             .sort_by_key(|viewer| std::cmp::Reverse(viewer.priority));
     }
 
-    pub(super) fn add_panel(&mut self, panel: Panel) {
+    pub(in crate::plugins) fn register_panel(&mut self, panel: Panel) {
         self.panels.push(panel);
         self.panels.sort_by_key(|panel| panel.order);
     }
 
-    pub(super) fn add_file_action(&mut self, action: FileAction) {
+    pub(in crate::plugins) fn register_file_action(&mut self, action: FileAction) {
         self.file_actions.push(action);
     }
 
-    pub(super) fn add_service(&mut self, start: StartService) {
+    pub(in crate::plugins) fn register_service(&mut self, start: StartService) {
         self.services.push(start);
     }
 
-    pub(super) fn add_status_item(&mut self, item: StatusItem) {
+    pub(in crate::plugins) fn register_status_item(&mut self, item: StatusItem) {
         self.status_items.push(item);
         self.status_items.sort_by_key(|item| item.order);
     }

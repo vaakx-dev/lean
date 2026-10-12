@@ -5,8 +5,9 @@ use gpui_kit::*;
 
 use super::Workspace;
 use super::panels::{SidebarPanel, build_panels};
+use super::status_bar::WorkspaceStatusBar;
 use crate::editor::{EditorArea, EditorAreaEvent};
-use crate::plugins::{FileDecorations, WorkspaceContext, status_items};
+use crate::plugins::{FileDecorations, WorkspaceContext};
 use crate::project::{FilesChanged, Project};
 use crate::toolchain::{Toolchains, ToolchainsEvent};
 
@@ -15,7 +16,7 @@ const ACTIVATION_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 pub(super) struct ProjectViews {
     pub(super) context: WorkspaceContext,
     pub(super) panels: Vec<SidebarPanel>,
-    pub(super) status_items: Vec<AnyView>,
+    pub(super) status_bar: Entity<WorkspaceStatusBar>,
     pub(super) subscriptions: Vec<Subscription>,
 }
 
@@ -37,11 +38,7 @@ impl ProjectViews {
         )
         .start_services(window, cx);
         let panels = build_panels(&context, window, cx);
-        let status_items = status_items(cx)
-            .to_vec()
-            .into_iter()
-            .map(|item| (item.build)(&context, window, cx))
-            .collect();
+        let status_bar = cx.new(|cx| WorkspaceStatusBar::new(&context, window, cx));
         let subscriptions = vec![
             cx.subscribe_in(
                 &project,
@@ -63,10 +60,7 @@ impl ProjectViews {
             cx.subscribe(
                 &editor_area,
                 |workspace, area, event: &EditorAreaEvent, cx| match event {
-                    EditorAreaEvent::ActiveEditorChanged => {
-                        workspace.record_session(cx);
-                        cx.notify();
-                    }
+                    EditorAreaEvent::ActiveEditorChanged => workspace.record_session(cx),
                     EditorAreaEvent::OpenFilesChanged => {
                         let paths = area.read(cx).open_paths();
                         workspace
@@ -83,7 +77,7 @@ impl ProjectViews {
         Self {
             context,
             panels,
-            status_items,
+            status_bar,
             subscriptions,
         }
     }
@@ -103,7 +97,7 @@ impl Workspace {
         let views = ProjectViews::new(root, window, cx);
         self.context = views.context;
         self.panels = views.panels;
-        self.status_items = views.status_items;
+        self.status_bar = views.status_bar;
         self._project_subscriptions = views.subscriptions;
         self.reset_terminal(window, cx);
         self.active_panel = self.default_panel_index(cx);
@@ -125,8 +119,5 @@ impl Workspace {
         self.context
             .project
             .update(cx, |project, cx| project.refresh_after_activation(cx));
-        self.context
-            .toolchains
-            .update(cx, |toolchains, cx| toolchains.refresh_if_automatic(cx));
     }
 }

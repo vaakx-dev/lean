@@ -14,7 +14,7 @@ use super::metadata::SharedMetadata;
 use super::shared_paths::SharedPaths;
 use super::skipped::SkippedFolders;
 use super::walk::walk;
-use super::{FsChanges, WATCH_EACH_FOLDER};
+use super::{DiskEntry, FsChanges, WATCH_EACH_FOLDER};
 use crate::project::IgnoreCache;
 
 pub(super) struct WatchedTree {
@@ -35,12 +35,13 @@ impl WatchedTree {
     pub(super) fn new(
         root: PathBuf,
         ignore: IgnoreCache,
+        skipped: SkippedFolders,
         health: Health,
         open_files: SharedPaths,
         metadata: SharedMetadata,
     ) -> Self {
         Self {
-            skipped: SkippedFolders::new(&root),
+            skipped,
             root,
             ignore,
             health,
@@ -52,10 +53,6 @@ impl WatchedTree {
             route: None,
             watcher: None,
         }
-    }
-
-    pub(super) fn skipped(&self) -> &SkippedFolders {
-        &self.skipped
     }
 
     pub(super) fn watched(&self) -> &SharedPaths {
@@ -149,9 +146,16 @@ impl WatchedTree {
     }
 
     fn follow_new_folders(&mut self, changes: &FsChanges) {
-        let folders: Vec<PathBuf> = changes
-            .paths
-            .iter()
+        let mut created = Vec::new();
+        for (path, entry) in &changes.structural {
+            match entry {
+                DiskEntry::Missing => self.folders.remove(path),
+                DiskEntry::Folder => created.push(path),
+                DiskEntry::File => {}
+            }
+        }
+        let folders: Vec<PathBuf> = created
+            .into_iter()
             .chain(&changes.ignored)
             .filter(|path| is_real_folder(path))
             .cloned()
@@ -162,7 +166,7 @@ impl WatchedTree {
     }
 
     fn scan(&mut self, folder: &Path) {
-        if self.ignore.is_ignored(folder) {
+        if self.ignore.is_ignored_folder(folder) {
             self.skipped.insert(folder.to_path_buf());
             return;
         }
@@ -177,27 +181,41 @@ impl WatchedTree {
 
     fn rescan(&mut self) {
         if !WATCH_EACH_FOLDER {
-            self.skipped.replace(HashSet::new());
+            self.keep_still_ignored();
             return;
         }
         let walk = walk(&self.root, &self.ignore);
-        let wanted: HashSet<PathBuf> = walk.folders.into_iter().collect();
-        let stale: Vec<PathBuf> = self
-            .folders
-            .read()
-            .difference(&wanted)
-            .filter(|folder| !self.open_file_folders.contains(*folder))
-            .cloned()
-            .collect();
+        let mut wanted: HashSet<PathBuf> = walk.folders.into_iter().collect();
+        let (stale, added) = {
+            let watched = self.folders.read();
+            let stale: Vec<PathBuf> = watched
+                .difference(&wanted)
+                .filter(|folder| !self.open_file_folders.contains(*folder))
+                .cloned()
+                .collect();
+            let added: Vec<PathBuf> = wanted.difference(&watched).cloned().collect();
+            (stale, added)
+        };
         for folder in &stale {
             self.unwatch(folder);
         }
-        let watched = wanted
-            .into_iter()
-            .filter(|folder| self.watch(folder, RecursiveMode::NonRecursive))
-            .collect();
-        self.folders.replace(watched);
+        for folder in added {
+            if !self.watch(&folder, RecursiveMode::NonRecursive) {
+                wanted.remove(&folder);
+            }
+        }
+        self.folders.replace(wanted);
         self.skipped.replace(walk.skipped.into_iter().collect());
+    }
+
+    fn keep_still_ignored(&self) {
+        let still_ignored = self
+            .skipped
+            .snapshot()
+            .into_iter()
+            .filter(|folder| self.ignore.is_ignored_folder(folder))
+            .collect();
+        self.skipped.replace(still_ignored);
     }
 
     fn watch(&mut self, path: &Path, mode: RecursiveMode) -> bool {

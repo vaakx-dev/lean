@@ -10,6 +10,7 @@ mod project;
 mod recent_projects;
 mod settings;
 mod storage;
+#[cfg(feature = "terminal")]
 mod terminal;
 mod theme;
 mod toolchain;

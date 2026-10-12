@@ -39,6 +39,7 @@ impl Toolchains {
     ) {
         if !self.discovered {
             change(self);
+            self.update_active_labels();
             return;
         }
         let before: HashMap<&'static str, Option<PathBuf>> = self
@@ -47,6 +48,7 @@ impl Toolchains {
             .map(|language| (language, self.active_prefix(language)))
             .collect();
         change(self);
+        self.update_active_labels();
         for language in self.languages() {
             let previous = before.get(language).cloned().flatten();
             if self.active_prefix(language) != previous {

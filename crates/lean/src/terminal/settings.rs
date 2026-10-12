@@ -1,4 +1,5 @@
 mod choices;
+mod default_shell;
 mod environment_field;
 mod page;
 
@@ -7,6 +8,7 @@ use std::collections::BTreeMap;
 use crate::settings::Setting;
 
 pub(crate) use choices::{BellMode, ClipboardAccess, CursorShapeChoice, WorkingDirectory};
+pub(crate) use default_shell::default_shell_program;
 pub(crate) use page::settings_page;
 
 pub(crate) const SHELL_PROGRAM: Setting<String> =

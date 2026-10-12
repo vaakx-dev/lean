@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::*;
 
-use super::document::Document;
+use super::loading::LoadState;
+use super::saved::serialize;
+use super::settings::SAVE_OUTPUTS;
 use super::{KernelStatus, Notebook};
-use crate::editor::file_text::decode_text;
 use crate::files::settings::LINE_ENDINGS;
 use crate::plugins::{AnyFileView, FileView, FileViewer, OpenRequest, Snapshot};
 use crate::workspace::status_item;
@@ -26,12 +27,14 @@ fn is_notebook(path: &Path) -> bool {
 }
 
 fn open(request: OpenRequest, window: &mut Window, cx: &mut App) -> Result<AnyFileView> {
-    let (text, line_ending) = decode_text(request.bytes)?;
-    let document = Document::parse(&text)?;
     let folder = folder_of(&request.path);
     let toolchains = request.toolchains;
-    let notebook =
-        cx.new(|cx| Notebook::new(folder, document, line_ending, toolchains, window, cx));
+    let bytes = request.bytes;
+    let notebook = cx.new(|cx| {
+        let mut notebook = Notebook::new(folder, toolchains, window, cx);
+        notebook.load_in_background(bytes, window, cx);
+        notebook
+    });
     Ok(notebook.into())
 }
 
@@ -46,15 +49,7 @@ impl FileView for Notebook {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<()> {
-        let (text, line_ending) = decode_text(bytes)?;
-        let document = Document::parse(&text)?;
-        let focus_handle = self.focus_handle.clone();
-        let folder = self.folder.clone();
-        let toolchains = self.toolchains.clone();
-        *self = Notebook::new(folder, document, line_ending, toolchains, window, cx);
-        self.focus_handle = focus_handle;
-        cx.notify();
-        Ok(())
+        self.load_now(bytes, window, cx)
     }
 
     fn differs_from_saved(&self, cx: &App) -> bool {
@@ -62,16 +57,21 @@ impl FileView for Notebook {
     }
 
     fn snapshot(&mut self, cx: &mut Context<Self>) -> Option<Result<Snapshot>> {
-        let line_ending = self.line_ending.for_save(LINE_ENDINGS.get(cx));
-        let saved = self.saved_cells(cx);
+        let LoadState::Loaded(line_ending) = &self.load_state else {
+            return Some(Err(anyhow!("the notebook didn't load")));
+        };
+        let line_ending = line_ending.for_save(LINE_ENDINGS.get(cx));
+        let with_outputs = SAVE_OUTPUTS.get(cx);
+        let fields = self.fields.clone();
+        let cells = self.saved_cells(cx);
+        let saved = cells.clone();
         let notebook = cx.weak_entity();
-        Some(self.content(cx).map(|content| {
-            Snapshot::new(move || line_ending.encode(content)).on_saved(move |cx| {
-                notebook
-                    .update(cx, |notebook, _| notebook.saved = saved)
-                    .ok();
-            })
-        }))
+        let encode = move || line_ending.encode(serialize(&fields, &cells, with_outputs));
+        Some(Ok(Snapshot::new(encode).on_saved(move |cx| {
+            notebook
+                .update(cx, |notebook, cx| notebook.mark_saved(saved, cx))
+                .ok();
+        })))
     }
 
     fn set_path(&mut self, path: &Path, _: &mut Context<Self>) {

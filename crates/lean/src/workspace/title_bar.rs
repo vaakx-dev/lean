@@ -17,6 +17,7 @@ impl Workspace {
         let project_name = self.context.project.read(cx).name().clone();
         let shows_search_box = TITLE_BAR_SEARCH_BOX.get(cx)
             && window.viewport_size().width >= SEARCH_BOX_MIN_WINDOW_WIDTH;
+        let shows_sidebar = self.shows_sidebar();
         TitleBar::new()
             .on_close_window(Self::close_window_handler(cx))
             .bg(theme.background)
@@ -54,13 +55,13 @@ impl Workspace {
                     .pr_1()
                     .child(layout_toggle(
                         "toggle-sidebar",
-                        if self.shows_sidebar() {
+                        if shows_sidebar {
                             "icons/panel-left.svg"
                         } else {
                             "icons/panel-left-open.svg"
                         },
                         "Toggle Sidebar",
-                        self.shows_sidebar(),
+                        shows_sidebar,
                         ToggleSidebar,
                     ))
                     .child(layout_toggle(

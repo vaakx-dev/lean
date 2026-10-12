@@ -7,6 +7,8 @@ use gpui_kit::*;
 
 use super::EditorArea;
 use super::disk_io::{DiskFile, DiskStamp, ReadError, read_changed_file};
+use super::text_file::discard_decoded;
+use crate::plugins::viewer_for;
 use crate::watcher::FsChanges;
 
 pub(super) use notices::dismiss_disk_notice;
@@ -70,16 +72,31 @@ impl EditorArea {
         };
         let id = file.id;
         let path = file.path.clone();
+        let saved_hash = file.disk.saved_hash;
+        let prepare = if force || !file.dirty {
+            viewer_for(&path, cx).and_then(|viewer| viewer.prepare)
+        } else {
+            None
+        };
         let read = cx.background_spawn({
             let path = path.clone();
-            async move { read_changed_file(&path, known) }
+            async move {
+                read_changed_file(&path, known).inspect(|disk| {
+                    if let (Some(disk), Some(prepare)) = (disk, prepare)
+                        && (force || disk.hash != saved_hash)
+                    {
+                        prepare(&path, &disk.bytes);
+                    }
+                })
+            }
         });
         file.disk._check = cx.spawn_in(window, async move |area, cx| {
             let result = read.await;
             area.update_in(cx, |area, window, cx| {
-                area.apply_disk_read(id, path, force, result, window, cx)
+                area.apply_disk_read(id, path.clone(), force, result, window, cx)
             })
             .ok();
+            discard_decoded(&path);
         });
     }
 

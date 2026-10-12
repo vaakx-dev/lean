@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui_kit::*;
 
@@ -34,10 +34,16 @@ impl GitProject {
         });
     }
 
-    pub(super) fn refresh_diff_views(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn refresh_diff_views(
+        &mut self,
+        shows: impl Fn(&Path) -> bool,
+        cx: &mut Context<Self>,
+    ) {
         self.diff_views.retain(|view| view.upgrade().is_some());
         for view in self.diff_views.iter().filter_map(WeakEntity::upgrade) {
-            view.update(cx, |view, cx| view.refresh(cx));
+            if shows(view.read(cx).path()) {
+                view.update(cx, |view, cx| view.refresh(cx));
+            }
         }
     }
 }

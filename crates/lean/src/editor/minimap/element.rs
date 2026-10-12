@@ -1,17 +1,13 @@
-use std::rc::Rc;
-
 use gpui_kit::*;
 
 use super::Minimap;
 use super::geometry::Geometry;
 use super::interaction::register_mouse_listeners;
-use super::rows::Rows;
 use super::style::MinimapStyle;
 use super::viewport::EditorViewport;
 
 pub(super) struct MinimapElement {
     pub(super) minimap: Entity<Minimap>,
-    pub(super) rows: Vec<Rc<Rows>>,
     pub(super) viewport: Option<EditorViewport>,
     pub(super) height: Pixels,
     pub(super) style: MinimapStyle,
@@ -20,9 +16,9 @@ pub(super) struct MinimapElement {
 }
 
 impl MinimapElement {
-    fn paint_lines(&self, geometry: &Geometry, window: &mut Window) {
+    fn paint_lines(&self, geometry: &Geometry, window: &mut Window, cx: &App) {
         let visible = geometry.visible_lines();
-        for rows in &self.rows {
+        for rows in self.minimap.read(cx).chunks.rows() {
             let lines = rows.lines();
             for line in visible.start.max(lines.start)..visible.end.min(lines.end) {
                 for block in rows.line(line) {
@@ -106,7 +102,7 @@ impl Element for MinimapElement {
         let geometry = Geometry::new(bounds, &viewport, self.style.line_height);
         window.set_cursor_style(CursorStyle::Arrow, hitbox);
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            self.paint_lines(&geometry, window);
+            self.paint_lines(&geometry, window, cx);
             if let Some(color) = self.slider_color {
                 window.paint_quad(fill(geometry.slider_bounds(), color));
             }

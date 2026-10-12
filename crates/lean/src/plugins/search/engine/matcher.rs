@@ -3,6 +3,7 @@ use std::ops::Range;
 use gpui_kit::SharedString;
 use regex::{Regex, RegexBuilder};
 
+use super::lines::line_break;
 use crate::plugins::search::query::SearchOptions;
 
 pub(super) struct Matcher {
@@ -25,6 +26,8 @@ impl Matcher {
             options.match_case || (smart_case && pattern.chars().any(char::is_uppercase));
         let regex = RegexBuilder::new(&source)
             .case_insensitive(!case_sensitive)
+            .multi_line(true)
+            .crlf(true)
             .build()
             .map_err(|error| error_message(&error))?;
         Ok(Self {
@@ -33,31 +36,47 @@ impl Matcher {
         })
     }
 
-    pub(super) fn is_match(&self, text: &str) -> bool {
-        self.regex.is_match(text)
-    }
-
-    pub(super) fn has_match_in_line(&self, line: &str) -> bool {
-        self.matches(line).next().is_some()
-    }
-
-    pub(super) fn find_in_line(&self, line: &str) -> Vec<Range<usize>> {
-        self.matches(line).collect()
-    }
-
-    fn matches<'a>(&'a self, line: &'a str) -> impl Iterator<Item = Range<usize>> + 'a {
+    pub(super) fn find_iter<'a>(
+        &'a self,
+        text: &'a str,
+    ) -> impl Iterator<Item = Range<usize>> + 'a {
         let mut start = 0;
+        let mut line_end = 0..0;
         std::iter::from_fn(move || {
-            while start <= line.len() {
-                let range = self.regex.find_at(line, start)?.range();
-                if !range.is_empty() && (!self.whole_word || is_whole_word(line, &range)) {
+            while start <= text.len() {
+                let found = self.regex.find_at(text, start)?.range();
+                if found.start >= line_end.end {
+                    line_end = line_break(text, found.start);
+                }
+                let Some(range) = self.within_line(text, found, line_end.start) else {
+                    start = line_end.end;
+                    continue;
+                };
+                if !range.is_empty() && (!self.whole_word || is_whole_word(text, &range)) {
                     start = range.end;
                     return Some(range);
                 }
-                start = next_char_start(line, range.start);
+                start = next_char_start(text, range.start);
             }
             None
         })
+    }
+
+    fn within_line(
+        &self,
+        text: &str,
+        found: Range<usize>,
+        line_end: usize,
+    ) -> Option<Range<usize>> {
+        if found.end <= line_end {
+            return Some(found);
+        }
+        if found.start >= line_end {
+            return None;
+        }
+        self.regex
+            .find_at(&text[..line_end], found.start)
+            .map(|found| found.range())
     }
 }
 
@@ -73,10 +92,10 @@ fn error_message(error: &regex::Error) -> SharedString {
     format!("Invalid regular expression: {detail}").into()
 }
 
-fn is_whole_word(line: &str, range: &Range<usize>) -> bool {
-    let found = &line[range.clone()];
-    let before = line[..range.start].chars().next_back();
-    let after = line[range.end..].chars().next();
+fn is_whole_word(text: &str, range: &Range<usize>) -> bool {
+    let found = &text[range.clone()];
+    let before = text[..range.start].chars().next_back();
+    let after = text[range.end..].chars().next();
     let starts_cleanly =
         !(found.chars().next().is_some_and(is_word_char) && before.is_some_and(is_word_char));
     let ends_cleanly =
@@ -84,8 +103,8 @@ fn is_whole_word(line: &str, range: &Range<usize>) -> bool {
     starts_cleanly && ends_cleanly
 }
 
-fn next_char_start(line: &str, index: usize) -> usize {
-    index + line[index..].chars().next().map_or(1, char::len_utf8)
+fn next_char_start(text: &str, index: usize) -> usize {
+    index + text[index..].chars().next().map_or(1, char::len_utf8)
 }
 
 fn is_word_char(character: char) -> bool {

@@ -2,10 +2,7 @@ use std::ops::Range;
 
 use gpui_kit::*;
 
-use super::style::MAX_WIDTH;
 use super::viewport::EditorViewport;
-
-pub(super) const MAX_COLUMNS: usize = ((MAX_WIDTH - TEXT_INSET) / COLUMN_WIDTH) as usize;
 
 const COLUMN_WIDTH: f32 = 1.;
 const TEXT_INSET: f32 = 6.;
@@ -20,6 +17,10 @@ pub(super) struct Geometry {
     slider_top: f32,
     slider_height: f32,
     lines_per_pixel: f32,
+}
+
+pub(super) fn columns_for(width: Pixels) -> usize {
+    ((f32::from(width) - TEXT_INSET) / COLUMN_WIDTH).max(0.) as usize
 }
 
 impl Geometry {

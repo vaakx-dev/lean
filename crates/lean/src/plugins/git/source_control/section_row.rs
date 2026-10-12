@@ -18,7 +18,7 @@ impl SourceControl {
         let expanded = !self.collapsed_sections.contains(&section);
         let (title, count) = match section {
             Section::Changes(group) => (group.title(), self.changes.files(group).len()),
-            Section::Commits => ("Commits", self.history.entries.len()),
+            Section::Commits => ("Commits", self.history.len()),
         };
         clickable_row(index, theme)
             .px_1()

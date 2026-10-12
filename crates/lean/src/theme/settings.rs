@@ -8,12 +8,11 @@ use crate::settings::Setting;
 pub(crate) use page::settings_page;
 
 pub(crate) const DEFAULT_THEME: &str = "Lean Dark";
-pub(crate) const DEFAULT_UI_FONT: &str = "Adwaita Sans";
 
 pub(crate) const THEME: Setting<String> = Setting::new_with("appearance.theme", default_theme);
 pub(crate) const ACCENT: Setting<String> = Setting::new_with("appearance.accent", default_accent);
 pub(crate) const UI_FONT_FAMILY: Setting<String> =
-    Setting::new_with("appearance.ui_font_family", default_ui_font);
+    Setting::new_with("appearance.ui_font_family", String::new);
 pub(crate) const UI_FONT_SIZE: Setting<f32> = Setting::new("appearance.ui_font_size", 14.);
 pub(crate) const RADIUS: Setting<u32> = Setting::new("appearance.radius", 6);
 pub(crate) const SCROLLBARS: Setting<Scrollbars> =
@@ -47,8 +46,4 @@ fn default_theme() -> String {
 
 fn default_accent() -> String {
     "#d6aa72".into()
-}
-
-fn default_ui_font() -> String {
-    DEFAULT_UI_FONT.into()
 }

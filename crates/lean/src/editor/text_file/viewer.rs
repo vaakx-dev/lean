@@ -5,8 +5,8 @@ use gpui_kit::component::highlighter::{LanguageRegistry, SyntaxHighlighter};
 use gpui_kit::*;
 
 use super::TextFile;
+use super::decoded::{prepare_text, take_decoded};
 use crate::editor::binary_file::BinaryFile;
-use crate::editor::file_text::normalize_line_endings;
 use crate::files::Language;
 use crate::files::settings::highlight_limit_bytes;
 use crate::plugins::{AnyFileView, FileViewer, OpenRequest};
@@ -31,7 +31,7 @@ fn handles_any(_: &Path) -> bool {
 }
 
 fn prepare(path: &Path, bytes: &[u8]) {
-    if std::str::from_utf8(bytes).is_err() {
+    if !prepare_text(path, bytes) {
         return;
     }
     let id = language_for(path, bytes.len()).id();
@@ -42,12 +42,11 @@ fn prepare(path: &Path, bytes: &[u8]) {
 
 fn open(request: OpenRequest, window: &mut Window, cx: &mut App) -> Result<AnyFileView> {
     let path = request.path;
-    let text = match String::from_utf8(request.bytes) {
-        Ok(text) => text,
-        Err(error) => return Ok(BinaryFile::open(path, error.as_bytes().len(), cx)),
+    let size = request.bytes.len();
+    let Some(decoded) = take_decoded(&path, request.bytes) else {
+        return Ok(BinaryFile::open(path, size, cx));
     };
-    let (text, line_ending) = normalize_line_endings(text);
     let toolchains = request.toolchains;
-    let file = cx.new(|cx| TextFile::new(&path, text, line_ending, toolchains, window, cx));
+    let file = cx.new(|cx| TextFile::new(path, decoded, toolchains, window, cx));
     Ok(file.into())
 }

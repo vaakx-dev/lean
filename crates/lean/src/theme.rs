@@ -7,8 +7,8 @@ mod user_themes;
 
 use gpui_kit::App;
 
-pub(crate) use catalog::theme_names;
-pub(crate) use fonts::installed_font_names;
+pub(crate) use catalog::{ThemeCatalog, theme_names};
+pub(crate) use fonts::{installed_font, installed_font_names};
 
 pub(crate) fn init(cx: &mut App) {
     catalog::load(cx);

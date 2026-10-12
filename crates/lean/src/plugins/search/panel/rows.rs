@@ -19,7 +19,7 @@ impl SearchPanel {
         self.rows.clear();
         for (file_index, file) in self.results.files.iter().enumerate() {
             self.rows.push(Row::File(file_index));
-            if !self.collapsed.contains(&file_index) {
+            if !file.collapsed {
                 self.rows.extend(
                     (0..file.lines.len()).map(|line_index| Row::Line(file_index, line_index)),
                 );
@@ -44,22 +44,21 @@ impl SearchPanel {
     }
 
     pub(super) fn toggle_file(&mut self, file_index: usize, cx: &mut Context<Self>) {
-        if !self.collapsed.remove(&file_index) {
-            self.collapsed.insert(file_index);
+        if let Some(file) = self.results.files.get_mut(file_index) {
+            file.collapsed = !file.collapsed;
         }
         self.rebuild_rows();
         cx.notify();
     }
 
     pub(super) fn all_collapsed(&self) -> bool {
-        !self.results.files.is_empty() && self.collapsed.len() == self.results.files.len()
+        !self.results.files.is_empty() && self.results.files.iter().all(|file| file.collapsed)
     }
 
     pub(super) fn toggle_all(&mut self, cx: &mut Context<Self>) {
-        if self.all_collapsed() {
-            self.collapsed.clear();
-        } else {
-            self.collapsed = (0..self.results.files.len()).collect();
+        let collapsed = !self.all_collapsed();
+        for file in &mut self.results.files {
+            file.collapsed = collapsed;
         }
         self.rebuild_rows();
         cx.notify();

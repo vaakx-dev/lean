@@ -2,7 +2,7 @@ use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{App, Pixels, SharedString, actions, px};
 
 use super::{FONT_FAMILY, FONT_SIZE, LINE_HEIGHT};
-use crate::theme::installed_font_names;
+use crate::theme::installed_font;
 
 actions!(editor, [IncreaseFontSize, DecreaseFontSize, ResetFontSize]);
 
@@ -19,8 +19,7 @@ pub(crate) fn init(cx: &mut App) {
 pub(crate) fn font_family(cx: &mut App) -> SharedString {
     FONT_FAMILY
         .get(cx)
-        .filter(|name| is_installed(name, cx))
-        .map(SharedString::from)
+        .and_then(|name| installed_font(&name, cx))
         .unwrap_or_else(|| cx.theme().mono_font_family.clone())
 }
 
@@ -35,8 +34,4 @@ pub(crate) fn line_height(cx: &App) -> f32 {
 fn change_font_size(delta: f32, cx: &mut App) {
     let size = (FONT_SIZE.get(cx).round() + delta).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
     FONT_SIZE.set(size, cx);
-}
-
-fn is_installed(name: &str, cx: &mut App) -> bool {
-    installed_font_names(cx).iter().any(|font| font == name)
 }

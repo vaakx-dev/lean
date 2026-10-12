@@ -6,7 +6,7 @@ mod running;
 mod settings_sync;
 mod summary;
 
-use std::collections::HashSet;
+use std::path::PathBuf;
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::v_flex;
@@ -33,9 +33,8 @@ pub(super) struct SearchPanel {
     results: SearchResults,
     status: SearchStatus,
     replacing_results: bool,
-    collapsed: HashSet<usize>,
     rows: Vec<Row>,
-    active_line: Option<(usize, usize)>,
+    active_line: Option<(PathBuf, usize)>,
     scroll_handle: UniformListScrollHandle,
     search_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
@@ -78,7 +77,6 @@ impl SearchPanel {
             results: SearchResults::default(),
             status: SearchStatus::Idle,
             replacing_results: false,
-            collapsed: HashSet::new(),
             rows: Vec::new(),
             active_line: None,
             scroll_handle: UniformListScrollHandle::new(),

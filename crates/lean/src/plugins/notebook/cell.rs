@@ -1,5 +1,7 @@
 mod view;
 
+use std::mem;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::component::input::{EditorState, InputEvent};
@@ -9,9 +11,10 @@ use serde_json::{Map, Value};
 use super::Notebook;
 use super::cell_options::cell_tab_size;
 use super::document::{CellData, CellKind};
-use super::output::Output;
+use super::output::{Output, OutputDecoder, release_outputs};
 use super::settings::{LINE_NUMBERS, SOFT_WRAP};
 use crate::plugins::FileViewEvent;
+use view::RowCache;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct CellId(pub(super) usize);
@@ -32,9 +35,12 @@ pub(super) struct Cell {
     pub(super) run_state: RunState,
     pub(super) editing: bool,
     pub(super) markdown: SharedString,
-    pub(super) verbatim: Option<Value>,
+    pub(super) verbatim: Option<Arc<Value>>,
+    pub(super) fields: Arc<Map<String, Value>>,
+    pub(super) source_saved: bool,
+    pub(super) revision: u64,
+    pub(super) rows: RowCache,
     clear_pending: bool,
-    fields: Map<String, Value>,
     _subscription: Subscription,
 }
 
@@ -47,35 +53,14 @@ impl Cell {
         self.outputs.iter().any(Output::is_error)
     }
 
-    pub(super) fn to_data(&self, with_outputs: bool, cx: &App) -> CellData {
-        let outputs = if with_outputs {
-            self.outputs
-                .iter()
-                .map(|output| output.json.clone())
-                .collect()
-        } else {
-            Vec::new()
-        };
-        CellData {
-            kind: self.kind,
-            source: self.editor.read(cx).value().to_string(),
-            outputs,
-            execution_count: self.execution_count.filter(|_| with_outputs),
-            fields: self.fields.clone(),
-            verbatim: self.verbatim.clone(),
+    pub(super) fn rebuild_outputs(&mut self, decoder: &OutputDecoder) {
+        for output in &mut self.outputs {
+            output.relimit(decoder);
         }
     }
 
-    pub(super) fn rebuild_outputs(&mut self, cx: &App) {
-        self.outputs = self
-            .outputs
-            .iter()
-            .map(|output| Output::new(output.json.clone(), cx))
-            .collect();
-    }
-
-    pub(super) fn start_run(&mut self) {
-        self.outputs.clear();
+    pub(super) fn start_run(&mut self, cx: &mut App) {
+        self.discard_outputs(cx);
         self.clear_pending = false;
         self.execution_count = None;
         self.run_state = RunState::Running;
@@ -88,25 +73,41 @@ impl Cell {
         };
     }
 
-    pub(super) fn push_output(&mut self, json: Value, cx: &App) {
+    pub(super) fn push_output(&mut self, output: Output, cx: &mut App) {
         if self.clear_pending {
-            self.outputs.clear();
+            self.discard_outputs(cx);
             self.clear_pending = false;
         }
         if let Some(last) = self.outputs.last_mut()
-            && last.merge_stream(&json)
+            && last.merge_stream(&output)
         {
             return;
         }
-        self.outputs.push(Output::new(json, cx));
+        self.outputs.push(output);
     }
 
-    pub(super) fn clear_outputs(&mut self, wait: bool) {
+    pub(super) fn clear_outputs(&mut self, wait: bool, cx: &mut App) {
         if wait {
             self.clear_pending = true;
         } else {
-            self.outputs.clear();
+            self.discard_outputs(cx);
         }
+    }
+
+    pub(super) fn finish_editing(&mut self, cx: &App) {
+        self.editing = false;
+        self.sync_markdown(cx);
+    }
+
+    pub(super) fn reset(&mut self, cx: &mut App) {
+        self.discard_outputs(cx);
+        self.clear_pending = false;
+        self.execution_count = None;
+        self.run_state = RunState::Idle;
+    }
+
+    pub(super) fn discard_outputs(&mut self, cx: &mut App) {
+        release_outputs(mem::take(&mut self.outputs), cx);
     }
 
     fn sync_markdown(&mut self, cx: &App) {
@@ -116,19 +117,13 @@ impl Cell {
             SharedString::default()
         };
     }
-
-    pub(super) fn reset(&mut self) {
-        self.outputs.clear();
-        self.clear_pending = false;
-        self.execution_count = None;
-        self.run_state = RunState::Idle;
-    }
 }
 
 impl Notebook {
     pub(super) fn create_cell(
         &mut self,
         data: CellData,
+        outputs: Vec<Output>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Cell {
@@ -158,18 +153,17 @@ impl Notebook {
             id,
             kind: data.kind,
             editor,
-            outputs: data
-                .outputs
-                .into_iter()
-                .map(|json| Output::new(json, cx))
-                .collect(),
+            outputs,
             execution_count: data.execution_count,
             run_state: RunState::Idle,
             editing,
             markdown: SharedString::default(),
-            verbatim: data.verbatim,
+            verbatim: data.verbatim.map(Arc::new),
+            fields: Arc::new(data.fields),
+            source_saved: false,
+            revision: 0,
+            rows: RowCache::default(),
             clear_pending: false,
-            fields: data.fields,
             _subscription: subscription,
         };
         cell.sync_markdown(cx);
@@ -185,9 +179,8 @@ impl Notebook {
             return;
         }
         cell.kind = kind;
-        cell.editing = false;
-        cell.reset();
-        cell.sync_markdown(cx);
+        cell.reset(cx);
+        cell.finish_editing(cx);
         cell.editor
             .update(cx, |editor, cx| editor.set_highlighter(language, cx));
         self.remeasure_cell(id);
@@ -199,8 +192,9 @@ impl Notebook {
         match event {
             InputEvent::Change => {
                 if let Some(cell) = self.cell_mut(id) {
-                    cell.sync_markdown(cx);
+                    cell.revision += 1;
                 }
+                self.refresh_source_saved(id, cx);
                 cx.emit(FileViewEvent::Edited);
                 cx.notify();
             }

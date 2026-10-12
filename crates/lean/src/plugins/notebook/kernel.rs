@@ -42,17 +42,35 @@ pub(super) fn kernel_program(interpreter: &str) -> String {
     }
 }
 
-pub(super) enum KernelEvent {
+pub(super) enum KernelEvent<O = Value> {
     Ready,
-    Reply { request: String, reply: Reply },
+    Reply { request: String, reply: Reply<O> },
     Stopped(Option<String>),
 }
 
-pub(super) enum Reply {
-    Output(Value),
+pub(super) enum Reply<O = Value> {
+    Output(O),
     Clear { wait: bool },
     ExecutionCount(u64),
     Idle,
+}
+
+impl KernelEvent {
+    pub(super) fn map_output<O>(self, decode: impl FnOnce(Value) -> O) -> KernelEvent<O> {
+        match self {
+            KernelEvent::Ready => KernelEvent::Ready,
+            KernelEvent::Stopped(error) => KernelEvent::Stopped(error),
+            KernelEvent::Reply { request, reply } => KernelEvent::Reply {
+                request,
+                reply: match reply {
+                    Reply::Output(json) => Reply::Output(decode(json)),
+                    Reply::Clear { wait } => Reply::Clear { wait },
+                    Reply::ExecutionCount(count) => Reply::ExecutionCount(count),
+                    Reply::Idle => Reply::Idle,
+                },
+            },
+        }
+    }
 }
 
 enum Command {

@@ -10,6 +10,7 @@ pub(super) type Scope = Option<Rc<KeyBindingContextPredicate>>;
 #[derive(Default)]
 pub(super) struct Registry {
     pub(super) commands: Vec<Command>,
+    applied: bool,
 }
 
 impl Global for Registry {}
@@ -80,7 +81,7 @@ pub(crate) fn bind_defaults(cx: &mut App, bindings: impl IntoIterator<Item = Key
         let title = command_title(&id);
         registry.add(id, title, binding);
     }
-    apply(cx);
+    apply_when_ready(cx);
 }
 
 pub(crate) fn bind_command(
@@ -93,7 +94,18 @@ pub(crate) fn bind_command(
     for binding in bindings {
         registry.add(id.into(), title.into(), binding);
     }
+    apply_when_ready(cx);
+}
+
+pub(crate) fn apply_bindings(cx: &mut App) {
+    cx.default_global::<Registry>().applied = true;
     apply(cx);
+}
+
+fn apply_when_ready(cx: &mut App) {
+    if cx.global::<Registry>().applied {
+        apply(cx);
+    }
 }
 
 fn keystrokes_text(binding: &KeyBinding) -> String {

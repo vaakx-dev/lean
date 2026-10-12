@@ -20,8 +20,10 @@ use element::MinimapElement;
 use geometry::Geometry;
 use interaction::Drag;
 use refresh::{Refresh, Styling};
-use style::{MinimapStyle, minimap_width};
+use style::MinimapStyle;
 use viewport::EditorViewport;
+
+pub(super) use style::minimap_width;
 
 const SLIDER_OPACITY: f32 = 0.06;
 const SLIDER_HOVER_OPACITY: f32 = 0.12;
@@ -166,20 +168,16 @@ impl Minimap {
     }
 }
 
-pub(crate) fn render_minimap(minimap: &Entity<Minimap>, cx: &App) -> impl IntoElement {
-    minimap.clone().cached(
-        StyleRefinement::default()
-            .w(minimap_width(cx))
-            .h_full()
-            .flex_shrink_0(),
-    )
+pub(crate) fn render_minimap(minimap: &Entity<Minimap>, width: Pixels) -> impl IntoElement {
+    minimap
+        .clone()
+        .cached(StyleRefinement::default().w(width).h_full().flex_shrink_0())
 }
 
 impl Render for Minimap {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div().size_full().child(MinimapElement {
             minimap: cx.entity(),
-            rows: self.chunks.rows(),
             viewport: self.viewport,
             height: self.height,
             style: self.style,

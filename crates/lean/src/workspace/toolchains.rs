@@ -20,7 +20,6 @@ impl Workspace {
         {
             window.push_notification(interpreter_notice(label, cx.weak_entity()), cx);
         }
-        cx.notify();
     }
 
     fn restart_terminals(&mut self, window: &mut Window, cx: &mut Context<Self>) {

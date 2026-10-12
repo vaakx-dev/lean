@@ -7,7 +7,7 @@ mod status;
 
 use gpui_kit::App;
 
-use super::{Plugin, PluginContext};
+use super::{Plugin, Registry};
 use git_project::GitProject;
 
 pub(super) const PLUGIN: Plugin = Plugin {
@@ -17,9 +17,9 @@ pub(super) const PLUGIN: Plugin = Plugin {
     activate,
 };
 
-fn activate(context: &mut PluginContext, cx: &mut App) {
-    context.register_service(GitProject::start);
-    context.register_panel(source_control::PANEL);
-    context.register_status_item(status::STATUS_ITEM);
+fn activate(registry: &mut Registry, cx: &mut App) {
+    registry.register_service(GitProject::start);
+    registry.register_panel(source_control::PANEL);
+    registry.register_status_item(status::STATUS_ITEM);
     source_control::bind_keys(cx);
 }

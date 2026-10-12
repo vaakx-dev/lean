@@ -22,7 +22,7 @@ impl Explorer {
             self.rebuild_visible();
             cx.notify();
             self.unfold_single_child(&path, window, cx);
-            if self.project.read(cx).watches_folder(&path) {
+            if !self.crosses_symlink(&path) && self.project.read(cx).watches_folder(&path) {
                 return;
             }
         } else if self.options.compact_folders {
@@ -69,6 +69,19 @@ impl Explorer {
         cx.notify();
     }
 
+    fn crosses_symlink(&self, folder: &Path) -> bool {
+        folder
+            .ancestors()
+            .take_while(|ancestor| *ancestor != self.root.as_path())
+            .any(|ancestor| {
+                ancestor
+                    .parent()
+                    .and_then(|parent| self.children.get(parent))
+                    .and_then(|children| children.iter().find(|child| *child.path == *ancestor))
+                    .is_none_or(|child| child.is_symlink)
+            })
+    }
+
     pub(super) fn rebuild_visible(&mut self) {
         let mut visible = Vec::new();
         if self.root_expanded {
@@ -102,7 +115,7 @@ impl Explorer {
             }
             let row = self.entry_row(child, depth);
             let opened =
-                (row.is_dir && self.expanded.contains(&row.path)).then(|| row.path.clone());
+                (row.is_dir && self.expanded.contains(&*row.path)).then(|| row.path.clone());
             visible.push(row);
             if let Some(opened) = opened {
                 self.push_children(&opened, depth + 1, visible);
@@ -126,7 +139,7 @@ fn draft_position(children: &[&DirectoryEntry], is_dir: bool) -> usize {
 
 fn draft_entry(folder: &Path, depth: usize, is_dir: bool) -> VisibleEntry {
     VisibleEntry {
-        path: folder.to_path_buf(),
+        path: folder.into(),
         name: SharedString::default(),
         depth,
         is_dir,

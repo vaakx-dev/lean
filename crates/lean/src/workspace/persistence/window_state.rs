@@ -40,11 +40,19 @@ struct SavedLayout {
     terminal_visible: bool,
 }
 
-pub(crate) fn restored_window_bounds(min_size: Size<Pixels>, cx: &App) -> Option<WindowBounds> {
+#[derive(Default)]
+struct StartupState(Option<WindowState>);
+
+impl Global for StartupState {}
+
+pub(crate) fn restored_window_bounds(min_size: Size<Pixels>, cx: &mut App) -> Option<WindowBounds> {
     if !RESTORE_WINDOW_BOUNDS.get(cx) {
         return None;
     }
-    let saved = read_state::<WindowState>(FILE_NAME)?.bounds?;
+    let state = read_window_state();
+    let saved = state.bounds;
+    cx.set_global(StartupState(Some(state)));
+    let saved = saved?;
     let bounds = saved.bounds;
     let fits = bounds.size.width >= min_size.width && bounds.size.height >= min_size.height;
     let on_screen = cx
@@ -78,11 +86,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let startup = cx.default_global::<StartupState>().0.take();
         if !RESTORE_LAYOUT.get(cx) {
             return;
         }
-        let Some(layout) = read_state::<WindowState>(FILE_NAME).and_then(|state| state.layout)
-        else {
+        let Some(layout) = startup.unwrap_or_else(read_window_state).layout else {
             return;
         };
         if let Some(index) = self.panel_index(&layout.panel) {
@@ -109,6 +117,10 @@ impl Workspace {
             terminal_visible: self.terminal_visible,
         }
     }
+}
+
+fn read_window_state() -> WindowState {
+    read_state(FILE_NAME).unwrap_or_default()
 }
 
 fn saved_bounds(window_bounds: WindowBounds) -> SavedBounds {

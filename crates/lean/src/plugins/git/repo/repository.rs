@@ -10,10 +10,7 @@ pub(crate) struct RepoFile {
 impl RepoFile {
     pub(crate) fn open(root: &Path, path: &Path) -> Result<Self> {
         let (repository, workdir) = open(root)?;
-        let relative_path = canonical(path)
-            .strip_prefix(&workdir)
-            .with_context(|| format!("{} is outside the repository", path.display()))?
-            .to_path_buf();
+        let relative_path = workdir_relative(path, &workdir)?;
         Ok(Self {
             repository,
             relative_path,
@@ -21,7 +18,14 @@ impl RepoFile {
     }
 }
 
-pub(super) fn open(root: &Path) -> Result<(git2::Repository, PathBuf)> {
+pub(crate) fn workdir_relative(path: &Path, workdir: &Path) -> Result<PathBuf> {
+    Ok(canonical(path)
+        .strip_prefix(workdir)
+        .with_context(|| format!("{} is outside the repository", path.display()))?
+        .to_path_buf())
+}
+
+pub(crate) fn open(root: &Path) -> Result<(git2::Repository, PathBuf)> {
     let repository = git2::Repository::discover(root)?;
     let workdir = workdir(&repository)
         .ok_or_else(|| anyhow!("{} has no working directory", root.display()))?;

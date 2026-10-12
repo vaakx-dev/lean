@@ -18,6 +18,8 @@ use gutter::render_gutter;
 use height::{EDITOR_PADDING, editor_height};
 use results::{render_outputs, render_run_status};
 
+pub(super) use height::RowCache;
+
 const CELL_GROUP: &str = "notebook-cell";
 
 impl Notebook {
@@ -85,7 +87,7 @@ fn render_body(
             Editor::new(&cell.editor)
                 .appearance(false)
                 .readonly(cell.verbatim.is_some())
-                .font_family(style.family.clone())
+                .font_family(style.family(cx))
                 .text_size(style.size)
                 .line_height(relative(style.line_height))
                 .px_3()

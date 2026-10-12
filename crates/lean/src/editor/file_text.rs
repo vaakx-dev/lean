@@ -1,8 +1,7 @@
-use std::hash::{DefaultHasher, Hasher as _};
+use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
 use anyhow::{Result, anyhow};
 use gpui_kit::component::Rope;
-use ropey::extra::esoterica::ropes_are_instances;
 
 use crate::files::settings::LineEndings;
 
@@ -35,6 +34,10 @@ impl LineEnding {
             crlf: crlf > lf,
             mixed: crlf > 0 && lf > 0,
         }
+    }
+
+    fn has_crlf(self) -> bool {
+        self.crlf || self.mixed
     }
 
     pub(crate) fn label(self) -> &'static str {
@@ -71,17 +74,47 @@ impl LineEnding {
     }
 }
 
-pub(crate) fn decode_text(bytes: Vec<u8>) -> Result<(String, LineEnding)> {
-    let text = String::from_utf8(bytes).map_err(|_| anyhow!("it is not a UTF-8 text file"))?;
-    Ok(normalize_line_endings(text))
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct Fingerprint {
+    len: usize,
+    hash: u64,
 }
 
-pub(super) fn normalize_line_endings(text: String) -> (String, LineEnding) {
+impl Fingerprint {
+    pub(super) fn of(text: &Rope) -> Self {
+        let mut hasher = DefaultHasher::new();
+        text.hash(&mut hasher);
+        Self {
+            len: text.len(),
+            hash: hasher.finish(),
+        }
+    }
+
+    pub(super) fn of_str(text: &str) -> Self {
+        Self::of(&Rope::from_str(text))
+    }
+
+    pub(super) fn matches(self, text: &Rope) -> bool {
+        self.len == text.len() && self == Self::of(text)
+    }
+}
+
+pub(crate) fn decode_text(bytes: Vec<u8>) -> Result<(String, LineEnding)> {
+    let text = String::from_utf8(bytes).map_err(|_| anyhow!("it is not a UTF-8 text file"))?;
     let ending = LineEnding::detect(&text);
-    if ending.crlf || ending.mixed {
+    if ending.has_crlf() {
+        Ok((text.replace("\r\n", "\n"), ending))
+    } else {
+        Ok((text, ending))
+    }
+}
+
+pub(super) fn decode_str(text: &str) -> (String, LineEnding) {
+    let ending = LineEnding::detect(text);
+    if ending.has_crlf() {
         (text.replace("\r\n", "\n"), ending)
     } else {
-        (text, ending)
+        (text.to_owned(), ending)
     }
 }
 
@@ -89,8 +122,4 @@ pub(super) fn content_hash(bytes: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
     hasher.write(bytes);
     hasher.finish()
-}
-
-pub(super) fn same_text(text: &Rope, saved: &Rope) -> bool {
-    ropes_are_instances(text, saved) || (text.len() == saved.len() && text == saved)
 }

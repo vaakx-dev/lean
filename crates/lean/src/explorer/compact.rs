@@ -44,7 +44,10 @@ impl Explorer {
         if !self.options.compact_folders || nesting > MAX_UNFOLD_DEPTH {
             return;
         }
-        let Some(child) = self.only_subfolder(folder).map(|entry| entry.path.clone()) else {
+        let Some(child) = self
+            .only_subfolder(folder)
+            .map(|entry| entry.path.to_path_buf())
+        else {
             return;
         };
         if !self.expanded.contains(&child) {

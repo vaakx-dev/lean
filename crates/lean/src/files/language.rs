@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use super::file_type::file_type;
+
 #[derive(Clone, Copy)]
 pub(crate) struct Language {
     id: &'static str,
@@ -7,10 +9,11 @@ pub(crate) struct Language {
 }
 
 impl Language {
-    pub(crate) const PLAIN: Language = Language {
-        id: "text",
-        display_name: "Plain Text",
-    };
+    pub(crate) const PLAIN: Language = Language::new("text", "Plain Text");
+
+    pub(super) const fn new(id: &'static str, display_name: &'static str) -> Self {
+        Self { id, display_name }
+    }
 
     pub(crate) fn id(self) -> &'static str {
         self.id
@@ -21,50 +24,7 @@ impl Language {
     }
 
     pub(crate) fn for_path(path: &Path) -> Language {
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-        let extension = path
-            .extension()
-            .map(|extension| extension.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-        let (id, display_name) = match (file_name.as_str(), extension.as_str()) {
-            ("makefile" | "gnumakefile", _) | (_, "mk") => ("make", "Makefile"),
-            ("cmakelists.txt", _) | (_, "cmake") => ("cmake", "CMake"),
-            (_, "rs") => ("rust", "Rust"),
-            (_, "ts" | "mts" | "cts") => ("typescript", "TypeScript"),
-            (_, "tsx") => ("tsx", "TypeScript JSX"),
-            (_, "js" | "mjs" | "cjs" | "jsx") => ("javascript", "JavaScript"),
-            (_, "json" | "jsonc" | "lock") if file_name != "cargo.lock" => ("json", "JSON"),
-            (_, "toml") | ("cargo.lock", _) => ("toml", "TOML"),
-            (_, "yaml" | "yml") => ("yaml", "YAML"),
-            (_, "md" | "mdx" | "markdown") => ("markdown", "Markdown"),
-            (_, "py" | "pyi") => ("python", "Python"),
-            (_, "go") => ("go", "Go"),
-            (_, "c" | "h") => ("c", "C"),
-            (_, "cpp" | "cc" | "cxx" | "hpp" | "hh" | "hxx") => ("cpp", "C++"),
-            (_, "cs") => ("text", "C#"),
-            (_, "java") => ("java", "Java"),
-            (_, "kt" | "kts") => ("text", "Kotlin"),
-            (_, "swift") => ("text", "Swift"),
-            (_, "zig") => ("zig", "Zig"),
-            (_, "lua") => ("lua", "Lua"),
-            (_, "rb") => ("text", "Ruby"),
-            (_, "php") => ("text", "PHP"),
-            (_, "scala") => ("text", "Scala"),
-            (_, "ex" | "exs") => ("text", "Elixir"),
-            (_, "sh" | "bash" | "zsh") => ("bash", "Shell Script"),
-            (_, "html" | "htm") => ("html", "HTML"),
-            (_, "css" | "scss") => ("css", "CSS"),
-            (_, "svelte") => ("svelte", "Svelte"),
-            (_, "astro") => ("astro", "Astro"),
-            (_, "sql") => ("text", "SQL"),
-            (_, "graphql" | "gql") => ("graphql", "GraphQL"),
-            (_, "proto") => ("proto", "Protocol Buffers"),
-            (_, "diff" | "patch") => ("diff", "Diff"),
-            _ => return Language::PLAIN,
-        };
-        Language { id, display_name }
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        file_type(&name).language
     }
 }

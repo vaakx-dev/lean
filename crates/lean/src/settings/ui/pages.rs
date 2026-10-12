@@ -3,17 +3,19 @@ use gpui_kit::App;
 use gpui_kit::component::Icon;
 use gpui_kit::component::setting::SettingPage;
 
-use crate::{app, editor, explorer, files, plugins, terminal, theme, toolchain};
+use crate::{app, editor, explorer, files, plugins, theme, toolchain};
 
-pub(super) fn settings_pages(cx: &App) -> Vec<SettingPage> {
-    let mut pages = feature_pages(cx);
-    pages.push(app::keybindings::settings_page(cx));
-    pages.push(plugins::settings::settings_page(cx));
-    pages
+pub(super) struct Pages {
+    pub(super) all: Vec<SettingPage>,
+    pub(super) keybindings: usize,
 }
 
-pub(super) fn keybindings_page_index(cx: &App) -> usize {
-    feature_pages(cx).len()
+pub(super) fn settings_pages(cx: &App) -> Pages {
+    let mut all = feature_pages(cx);
+    let keybindings = all.len();
+    all.push(app::keybindings::settings_page(cx));
+    all.push(plugins::settings::settings_page(cx));
+    Pages { all, keybindings }
 }
 
 fn feature_pages(cx: &App) -> Vec<SettingPage> {
@@ -23,8 +25,9 @@ fn feature_pages(cx: &App) -> Vec<SettingPage> {
         editor::settings::settings_page(cx),
         files::settings::settings_page(cx),
         explorer::settings::settings_page(cx),
-        terminal::settings::settings_page(cx),
     ];
+    #[cfg(feature = "terminal")]
+    pages.push(crate::terminal::settings::settings_page(cx));
     #[cfg(feature = "git")]
     pages.push(plugins::git::settings::settings_page(cx));
     #[cfg(feature = "search")]

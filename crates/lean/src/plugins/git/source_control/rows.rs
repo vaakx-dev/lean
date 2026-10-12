@@ -74,10 +74,10 @@ impl SourceControl {
                 })),
             }
         }
-        if self.show_history && !self.history.entries.is_empty() {
+        if self.show_history && !self.history.is_empty() {
             rows.push(Row::Section(Section::Commits));
             if !self.collapsed_sections.contains(&Section::Commits) {
-                rows.extend((0..self.history.entries.len()).map(Row::Commit));
+                rows.extend((0..self.history.len()).map(Row::Commit));
                 if self.has_more_history {
                     rows.push(Row::LoadMoreCommits);
                 }

@@ -2,11 +2,12 @@ mod closing;
 mod header;
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use gpui_kit::component::v_flex;
 use gpui_kit::*;
 
-use super::launch::TerminalLaunch;
+use super::launch::{Launcher, TerminalLaunch};
 use super::view::{TerminalEvent, TerminalView};
 
 pub(crate) enum TerminalPanelEvent {
@@ -20,7 +21,7 @@ struct TerminalTab {
 
 pub(crate) struct TerminalPanel {
     project_root: PathBuf,
-    launch: Box<dyn Fn(&App) -> TerminalLaunch>,
+    launcher: Launcher,
     tabs: Vec<TerminalTab>,
     active: usize,
 }
@@ -35,7 +36,7 @@ impl TerminalPanel {
     ) -> Self {
         let mut panel = Self {
             project_root,
-            launch: Box::new(launch),
+            launcher: Rc::new(launch),
             tabs: Vec::new(),
             active: 0,
         };
@@ -75,9 +76,8 @@ impl TerminalPanel {
     }
 
     fn add_terminal(&mut self, cx: &mut Context<Self>) {
-        let launch = (self.launch)(cx);
-        let working_directory = launch.working_directory(&self.project_root, cx);
-        let view = cx.new(|cx| TerminalView::new(working_directory, launch, cx));
+        let launcher = self.launcher.clone();
+        let view = cx.new(|cx| TerminalView::new(&self.project_root, launcher, cx));
         let subscription = cx.subscribe(&view, |_, _, event: &TerminalEvent, cx| match event {
             TerminalEvent::Exited | TerminalEvent::TitleChanged => cx.notify(),
         });

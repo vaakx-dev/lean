@@ -27,6 +27,7 @@ use folder::ProjectViews;
 use panels::SidebarPanel;
 use settings::{SIDEBAR_WIDTH, STATUS_BAR_VISIBLE, TITLE_BAR_SEARCH_BOX};
 use sidebar_resize::clamp_sidebar_width;
+use status_bar::WorkspaceStatusBar;
 use terminal_panel::TerminalDock;
 
 pub(crate) use close_confirmation::CloseIntent;
@@ -38,13 +39,12 @@ const GAP: Pixels = px(6.);
 pub(crate) struct Workspace {
     context: WorkspaceContext,
     panels: Vec<SidebarPanel>,
-    status_items: Vec<AnyView>,
+    status_bar: Entity<WorkspaceStatusBar>,
     app_menu_bar: Entity<AppMenuBar>,
     focus_handle: FocusHandle,
     active_panel: usize,
     sidebar_visible: bool,
     sidebar_width: Pixels,
-    resizing_sidebar: bool,
     terminal_visible: bool,
     terminal: Option<TerminalDock>,
     last_activation_refresh: Instant,
@@ -70,13 +70,12 @@ impl Workspace {
         let mut workspace = Self {
             context: views.context,
             panels: views.panels,
-            status_items: views.status_items,
+            status_bar: views.status_bar,
             app_menu_bar: AppMenuBar::new(cx),
             focus_handle: cx.focus_handle(),
             active_panel: 0,
             sidebar_visible: true,
             sidebar_width: clamp_sidebar_width(SIDEBAR_WIDTH.get(cx)),
-            resizing_sidebar: false,
             terminal_visible: false,
             terminal: None,
             last_activation_refresh: Instant::now(),

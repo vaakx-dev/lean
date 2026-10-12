@@ -44,12 +44,12 @@ impl EditorArea {
         path: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Task<()> {
         let placement = Placement::Show {
             preview: false,
             target: None,
         };
-        self.open_placed(path, placement, window, cx);
+        self.open_placed(path, placement, window, cx)
     }
 
     fn open_with(
@@ -63,7 +63,7 @@ impl EditorArea {
             preview: self.opens_as_preview(&path, cx),
             target,
         };
-        self.open_placed(path, placement, window, cx);
+        self.open_placed(path, placement, window, cx).detach();
     }
 
     pub(super) fn open_placed(
@@ -72,14 +72,14 @@ impl EditorArea {
         placement: Placement,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Task<()> {
         if let Some(index) = self.index_of(&path) {
             self.place(index, placement, window, cx);
-            return;
+            return Task::ready(());
         }
         let Some(viewer) = viewer_for(&path, cx) else {
             report_open_error(&path, &"no viewer can open it", &placement, window, cx);
-            return;
+            return Task::ready(());
         };
         let read = cx.background_spawn({
             let path = path.clone();
@@ -99,7 +99,6 @@ impl EditorArea {
             })
             .ok();
         })
-        .detach();
     }
 
     pub(crate) fn activate_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {

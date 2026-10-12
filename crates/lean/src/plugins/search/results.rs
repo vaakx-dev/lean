@@ -9,6 +9,7 @@ pub(super) struct FileResult {
     pub(super) folder: SharedString,
     pub(super) match_count: usize,
     pub(super) lines: Vec<LineResult>,
+    pub(super) collapsed: bool,
 }
 
 pub(super) struct LineResult {
@@ -51,6 +52,7 @@ impl FileResult {
             folder,
             match_count,
             lines,
+            collapsed: false,
         }
     }
 }
@@ -63,6 +65,7 @@ impl SearchResults {
             .map(|file| file.match_count)
             .sum::<usize>();
         self.files.extend(batch.files);
+        self.files.sort_by(|left, right| left.path.cmp(&right.path));
         self.truncated |= batch.truncated;
     }
 }

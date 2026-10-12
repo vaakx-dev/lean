@@ -15,8 +15,11 @@ pub(super) struct StartupCommand {
 }
 
 impl TerminalView {
-    pub(super) fn queue_startup_command(&mut self, cx: &mut Context<Self>) {
-        let pending = self.launch.startup_command.clone();
+    pub(super) fn queue_startup_command(
+        &mut self,
+        pending: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
         let deadline_task = pending
             .is_some()
             .then(|| Self::send_startup_command_after(MAX_DELAY, cx));
