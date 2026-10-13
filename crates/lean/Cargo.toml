@@ -1,6 +1,6 @@
 [package]
 name = "lean"
-version = "0.1.0"
+version = "0.2.0-alpha.1"
 description = "A small, fast native code editor built with GPUI"
 readme = "../../README.md"
 keywords = ["editor", "gpui", "code-editor", "terminal", "git"]
