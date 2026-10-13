@@ -1,4 +1,4 @@
-use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, TITLE_BAR_HEIGHT, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -67,9 +67,12 @@ impl Render for Workspace {
             .text_color(theme.foreground);
         bind_commands(root, cx)
             .child(
-                self.title_bar
-                    .clone()
-                    .cached(StyleRefinement::default().w_full().flex_shrink_0()),
+                self.title_bar.clone().cached(
+                    StyleRefinement::default()
+                        .w_full()
+                        .h(TITLE_BAR_HEIGHT)
+                        .flex_shrink_0(),
+                ),
             )
             .child(self.render_body(show_status_bar, window, cx))
             .when(show_status_bar, |root| root.child(self.render_status_bar()))
